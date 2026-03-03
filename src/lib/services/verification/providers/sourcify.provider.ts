@@ -7,7 +7,7 @@ export class SourcifyProvider implements VerificationProvider {
 
   protected baseUrl: string
 
-  constructor(id = "sourcify", name = "Sourcify", baseUrl = "https://sourcify.dev/server") {
+  constructor(id = "sourcify", name = "Sourcify", baseUrl = "/api/proxy/sourcify") {
     this.id = id
     this.name = name
     this.baseUrl = baseUrl

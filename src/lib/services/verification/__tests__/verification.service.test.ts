@@ -84,29 +84,22 @@ function mockFetchForProviders(options: {
     const url = typeof input === "string" ? input : input.toString()
 
     // Routescan API calls
-    if (url.includes("routescan.io")) {
+    if (url.includes("/api/proxy/routescan")) {
       return routescan.verified
         ? etherscanVerifiedResponse(routescan.source)
         : etherscanNotVerifiedResponse()
     }
 
     // Etherscan V2 API calls
-    if (url.includes("api.etherscan.io")) {
+    if (url.includes("/api/proxy/etherscan")) {
       return etherscan.verified
         ? etherscanVerifiedResponse(etherscan.source)
         : etherscanNotVerifiedResponse()
     }
 
-    // Sourcify API calls (public sourcify.dev)
-    if (url.includes("sourcify.dev")) {
-      if (sourcify.verified) {
-        return sourcifyVerifiedResponse(url.includes("fields="))
-      }
-      return sourcifyNotVerifiedResponse()
-    }
-
     // Avalanche Explorer API calls (sourcify.avax.network) — uses Sourcify V1 API
-    if (url.includes("sourcify.avax.network")) {
+    // Must be checked before sourcify to avoid substring match
+    if (url.includes("/api/proxy/sourcify-avax")) {
       if (url.includes("check-all-by-addresses")) {
         if (avalancheExplorer.verified) {
           return {
@@ -132,6 +125,14 @@ function mockFetchForProviders(options: {
         return { ok: false, status: 404 } as unknown as Response
       }
       return { ok: false, status: 404 } as unknown as Response
+    }
+
+    // Sourcify API calls (public sourcify.dev)
+    if (url.includes("/api/proxy/sourcify")) {
+      if (sourcify.verified) {
+        return sourcifyVerifiedResponse(url.includes("fields="))
+      }
+      return sourcifyNotVerifiedResponse()
     }
 
     return { ok: false, status: 404 } as unknown as Response
@@ -178,11 +179,11 @@ describe("VerificationService", () => {
       vi.mocked(fetch).mockImplementation(async (input: RequestInfo | URL) => {
         const url = typeof input === "string" ? input : input.toString()
 
-        if (url.includes("routescan.io")) {
+        if (url.includes("/api/proxy/routescan")) {
           throw new Error("Network error")
         }
 
-        if (url.includes("sourcify.dev")) {
+        if (url.includes("/api/proxy/sourcify")) {
           return sourcifyVerifiedResponse(url.includes("fields="))
         }
 
@@ -269,7 +270,7 @@ describe("VerificationService", () => {
     it("fetches constructor args from routescan", async () => {
       vi.mocked(fetch).mockImplementation(async (input: RequestInfo | URL) => {
         const url = typeof input === "string" ? input : input.toString()
-        if (url.includes("routescan.io")) {
+        if (url.includes("/api/proxy/routescan")) {
           return {
             ok: true,
             json: async () => ({
@@ -319,7 +320,7 @@ describe("VerificationService", () => {
         const url = typeof input === "string" ? input : input.toString()
 
         // Routescan getsourcecode — return constructor args
-        if (url.includes("routescan.io") && url.includes("getsourcecode") && (!init || !init.method || init.method === "GET")) {
+        if (url.includes("/api/proxy/routescan") && url.includes("getsourcecode") && (!init || !init.method || init.method === "GET")) {
           return {
             ok: true,
             json: async () => ({
@@ -336,7 +337,7 @@ describe("VerificationService", () => {
         }
 
         // Routescan verifysourcecode POST
-        if (url.includes("routescan.io") && init?.method === "POST") {
+        if (url.includes("/api/proxy/routescan") && init?.method === "POST") {
           const body = init?.body?.toString() ?? ""
           expect(body).toContain("constructorArguements=0000000000000000000000000000000000000000000000000000000000000064")
           return {
@@ -346,7 +347,7 @@ describe("VerificationService", () => {
         }
 
         // Routescan checkverifystatus
-        if (url.includes("routescan.io") && url.includes("checkverifystatus")) {
+        if (url.includes("/api/proxy/routescan") && url.includes("checkverifystatus")) {
           return {
             ok: true,
             json: async () => ({ status: "1", result: "Pass - Verified" }),
@@ -374,7 +375,7 @@ describe("VerificationService", () => {
       vi.mocked(fetch).mockImplementation(async (input: RequestInfo | URL) => {
         const url = typeof input === "string" ? input : input.toString()
 
-        if (url.includes("routescan.io") && url.includes("0xPROXY")) {
+        if (url.includes("/api/proxy/routescan") && url.includes("0xPROXY")) {
           return {
             ok: true,
             json: async () => ({
@@ -395,7 +396,7 @@ describe("VerificationService", () => {
           } as unknown as Response
         }
 
-        if (url.includes("routescan.io") && url.includes("0xIMPL")) {
+        if (url.includes("/api/proxy/routescan") && url.includes("0xIMPL")) {
           return {
             ok: true,
             json: async () => ({
@@ -416,7 +417,7 @@ describe("VerificationService", () => {
           } as unknown as Response
         }
 
-        if (url.includes("sourcify.dev") && url.includes("0xIMPL")) {
+        if (url.includes("/api/proxy/sourcify") && url.includes("0xIMPL")) {
           if (url.includes("fields=")) {
             return {
               ok: true,
@@ -435,10 +436,10 @@ describe("VerificationService", () => {
         }
 
         // Everything else not verified
-        if (url.includes("sourcify.dev") || url.includes("sourcify.avax.network")) {
+        if (url.includes("/api/proxy/sourcify") || url.includes("/api/proxy/sourcify-avax")) {
           return { ok: false, status: 404 } as unknown as Response
         }
-        if (url.includes("api.etherscan.io")) {
+        if (url.includes("/api/proxy/etherscan")) {
           return {
             ok: true,
             json: async () => ({ status: "0", result: [{ SourceCode: "" }] }),

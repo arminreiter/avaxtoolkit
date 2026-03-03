@@ -8,7 +8,7 @@ import type { VerificationResult, ContractSource, ABIEntry, CrossVerifyResult } 
  */
 export class AvalancheExplorerProvider extends SourcifyProvider {
   constructor() {
-    super("avalanche-explorer", "Avalanche Explorer", "https://sourcify.avax.network")
+    super("avalanche-explorer", "Avalanche Explorer", "/api/proxy/sourcify-avax")
   }
 
   explorerUrl(address: string, chainId: number): string {
@@ -180,7 +180,7 @@ export class AvalancheExplorerProvider extends SourcifyProvider {
     address: string,
     chainId: number,
   ): Promise<Record<string, unknown> | undefined> {
-    const url = `https://sourcify.dev/server/v2/contract/${chainId}/${address}?fields=metadata`
+    const url = `/api/proxy/sourcify/v2/contract/${chainId}/${address}?fields=metadata`
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 15000)
     try {

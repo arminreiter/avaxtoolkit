@@ -16,7 +16,7 @@ export class CChainService {
   static getRawResponses() { return { ...CChainService.rawResponses } }
   static clearRawResponses() { CChainService.rawResponses = {} }
 
-  static getProvider(rpcUrl: string) {
+  static getProvider(rpcUrl: string, chainId?: number) {
     let provider = CChainService.providers.get(rpcUrl)
     if (!provider) {
       // Evict oldest entry if cache is full
@@ -26,10 +26,26 @@ export class CChainService {
         old?.destroy()
         CChainService.providers.delete(oldest)
       }
-      provider = new ethers.JsonRpcProvider(rpcUrl)
+      // Use staticNetwork when chainId is known to skip _detectNetwork,
+      // preventing infinite retry loops when the node is unreachable.
+      if (chainId) {
+        const network = ethers.Network.from(chainId)
+        provider = new ethers.JsonRpcProvider(rpcUrl, network, { staticNetwork: network })
+      } else {
+        provider = new ethers.JsonRpcProvider(rpcUrl)
+      }
       CChainService.providers.set(rpcUrl, provider)
     }
     return provider
+  }
+
+  /** Remove a cached provider (e.g. after a connection failure) */
+  static destroyProvider(rpcUrl: string) {
+    const provider = CChainService.providers.get(rpcUrl)
+    if (provider) {
+      provider.destroy()
+      CChainService.providers.delete(rpcUrl)
+    }
   }
 
   static async getBlock(rpcUrl: string, blockNumber: number | "latest") {

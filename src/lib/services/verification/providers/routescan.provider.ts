@@ -6,7 +6,7 @@ export class RoutescanProvider extends EtherscanProvider {
 
   protected getBaseUrl(chainId: number): string {
     const network = chainId === 43113 ? "testnet" : "mainnet"
-    return `https://api.routescan.io/v2/network/${network}/evm/${chainId}/etherscan/api`
+    return `/api/proxy/routescan/v2/network/${network}/evm/${chainId}/etherscan/api`
   }
 
   explorerUrl(address: string, chainId: number): string {

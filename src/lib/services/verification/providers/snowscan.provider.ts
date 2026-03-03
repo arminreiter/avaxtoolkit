@@ -14,7 +14,7 @@ export class SnowscanProvider extends EtherscanProvider {
   protected getBaseUrl(chainId: number): string {
     const apiKey = getEtherscanApiKey()
     if (!apiKey) throw new Error("Etherscan API key required")
-    return `https://api.etherscan.io/v2/api?chainid=${chainId}&apikey=${apiKey}`
+    return `/api/proxy/etherscan/v2/api?chainid=${chainId}&apikey=${apiKey}`
   }
 
   explorerUrl(address: string, chainId: number): string {

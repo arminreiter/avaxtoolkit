@@ -3,6 +3,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, useMemo, type ReactNode } from "react"
 import { type Network, type ChainEndpoints, DEFAULT_NETWORKS, deriveEndpoints, isValidNetwork } from "@/lib/models/network"
 import { RpcService } from "@/lib/services/rpc.service"
+import { CChainService } from "@/lib/services/cchain.service"
 
 const STORAGE_KEY_NETWORK = "avax-toolkit-network"
 const STORAGE_KEY_CUSTOM = "avax-toolkit-custom-networks"
@@ -61,12 +62,17 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
     let cancelled = false
     setIsConnected(false)
 
+    // Pre-configure ethers provider with staticNetwork to prevent
+    // infinite _detectNetwork retry loops when the node is unreachable.
+    const ep = deriveEndpoints(network.baseUrl, network.plainRpc)
+    CChainService.getProvider(ep.cChain, network.chainId)
+
     RpcService.healthCheck(network.baseUrl, network.plainRpc)
       .then(ok => { if (!cancelled) setIsConnected(ok) })
       .catch(() => { if (!cancelled) setIsConnected(false) })
 
     return () => { cancelled = true }
-  }, [network.baseUrl, network.plainRpc])
+  }, [network.baseUrl, network.plainRpc, network.chainId])
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const setNetwork = useCallback((n: Network) => {

@@ -98,7 +98,7 @@ describe("SnowscanProvider (Etherscan V2)", () => {
       await provider.checkVerification("0xABC", 43114)
 
       expect(fetch).toHaveBeenCalledWith(
-        expect.stringContaining("api.etherscan.io/v2/api?chainid=43114&apikey=test-key"),
+        expect.stringContaining("/api/proxy/etherscan/v2/api?chainid=43114&apikey=test-key"),
         expect.objectContaining({ signal: expect.any(AbortSignal) })
       )
     })

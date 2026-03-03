@@ -138,7 +138,7 @@ describe("SourcifyProvider", () => {
         compilerVersion: "v0.8.20",
       }, "Test")
 
-      expect(capturedUrl).toBe("https://sourcify.dev/server/v2/verify/43114/0xABC")
+      expect(capturedUrl).toBe("/api/proxy/sourcify/v2/verify/43114/0xABC")
       const body = JSON.parse(capturedBody)
       expect(body.stdJsonInput).toBeDefined()
       expect(body.compilerVersion).toBe("0.8.20")
