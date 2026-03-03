@@ -11,6 +11,7 @@ import { LoadingButton } from "@/components/tools/LoadingButton"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { VerificationStatus } from "@/components/contracts/VerificationStatus"
 import { VerificationInstructions } from "@/components/contracts/VerificationInstructions"
+import { AlertTriangle } from "lucide-react"
 
 const SourceViewer = dynamic(() => import("@/components/contracts/SourceViewer").then(m => ({ default: m.SourceViewer })), { ssr: false })
 const ContractRead = dynamic(() => import("@/components/contracts/ContractRead").then(m => ({ default: m.ContractRead })), { ssr: false })
@@ -53,12 +54,22 @@ export default function ContractVerificationPage() {
 
   const anyVerified = data?.results.some(r => r.verified) ?? false
   const hasProxyAbi = !!(data?.proxy.isProxy && data.proxy.implementationAbi?.length)
+  const isSupported = network.type === "mainnet" || network.type === "fuji"
 
   return (
     <ToolCard
       title="Smart Contract Verification"
       description="Check verification status across explorers, view source code, and interact with verified contracts."
     >
+      {!isSupported ? (
+        <div className="flex items-center gap-3 rounded border border-yellow-600/40 bg-yellow-100 dark:bg-yellow-950/20 px-4 py-3 text-sm text-yellow-700 dark:text-yellow-400">
+          <AlertTriangle className="size-5 shrink-0" />
+          <span>
+            Contract verification is only available on <strong>Mainnet</strong> and <strong>Fuji</strong>.
+            Switch your network to use this feature.
+          </span>
+        </div>
+      ) : (
       <div className="space-y-6">
         <div className="flex gap-3 items-end">
           <div className="flex-1">
@@ -148,6 +159,7 @@ export default function ContractVerificationPage() {
           </Tabs>
         )}
       </div>
+      )}
     </ToolCard>
   )
 }

@@ -26,6 +26,13 @@ export const metadata: Metadata = {
     title: "AVAX Toolkit",
     description: "Comprehensive toolkit for the Avalanche network",
     type: "website",
+    images: [{ url: "/opengraph-image.png", width: 1200, height: 630, alt: "AVAX Toolkit Dashboard" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "AVAX Toolkit",
+    description: "Comprehensive toolkit for the Avalanche network",
+    images: ["/opengraph-image.png"],
   },
 }
 

@@ -58,11 +58,6 @@ function DashboardContent() {
         .finally(() => { if (!cancelled) setDone(key) })
     }
 
-    fetchStat("validatorCount", async () => {
-      const validators = await AvalancheService.getValidators(network.baseUrl)
-      return validators.length.toLocaleString()
-    })
-
     fetchStat("supply", async () => {
       const result = await AvalancheService.getCurrentSupply(network.baseUrl)
       if (!cancelled) setStakingData(prev => ({ ...prev, supply: result.supply }))
@@ -111,7 +106,16 @@ function DashboardContent() {
         }
       })
 
-    return () => { cancelled = true }
+    // Defer the heavy getValidators call (huge payload) so lighter RPCs
+    // grab connections first and aren't queued behind it.
+    const timer = setTimeout(() => {
+      fetchStat("validatorCount", async () => {
+        const validators = await AvalancheService.getValidators(network.baseUrl)
+        return validators.length.toLocaleString()
+      })
+    }, 50)
+
+    return () => { cancelled = true; clearTimeout(timer) }
   }, [network.baseUrl, endpoints.cChain, setVal, setDone])
 
   return (
