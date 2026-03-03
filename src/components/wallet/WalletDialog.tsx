@@ -21,7 +21,7 @@ export function WalletDialog() {
 
   return (
     <Dialog open={isWalletDialogOpen} onOpenChange={(open) => { if (!open) closeWalletDialog() }}>
-      <DialogContent className="sm:max-w-2xl max-h-[85vh] flex flex-col">
+      <DialogContent className="sm:max-w-2xl max-h-[100dvh] sm:max-h-[85vh] h-full sm:h-auto flex flex-col p-4 sm:p-6">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 font-display tracking-wider uppercase">
             <Wallet className="h-5 w-5" />
@@ -35,19 +35,19 @@ export function WalletDialog() {
         <Tabs defaultValue="wallets" className="flex-1 min-h-0 flex flex-col">
           <TabsList className="w-full justify-start shrink-0">
             <TabsTrigger value="wallets" className="gap-1.5">
-              <Wallet className="h-3.5 w-3.5" /> Wallets
+              <Wallet className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Wallets</span>
             </TabsTrigger>
             <TabsTrigger value="generate" className="gap-1.5">
-              <Plus className="h-3.5 w-3.5" /> Generate
+              <Plus className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Generate</span>
             </TabsTrigger>
             <TabsTrigger value="import" className="gap-1.5">
-              <Download className="h-3.5 w-3.5" /> Import
+              <Download className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Import</span>
             </TabsTrigger>
             <TabsTrigger value="connect" className="gap-1.5">
-              <Link className="h-3.5 w-3.5" /> Connect
+              <Link className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Connect</span>
             </TabsTrigger>
             <TabsTrigger value="devtools" className="gap-1.5">
-              <FlaskConical className="h-3.5 w-3.5" /> Dev
+              <FlaskConical className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Dev</span>
             </TabsTrigger>
           </TabsList>
 
@@ -151,7 +151,7 @@ function DeriveSelector({ mnemonic, onSelect, basePath = "m/44'/60'/0'/0/" }: {
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
         <Label className="text-xs flex items-center gap-1.5">
           <GitBranch className="h-3 w-3" /> Select Derived Addresses
         </Label>
@@ -159,7 +159,7 @@ function DeriveSelector({ mnemonic, onSelect, basePath = "m/44'/60'/0'/0/" }: {
           <button onClick={toggleAll} className="text-[10px] text-primary hover:underline">
             {derived.every(d => selectedIndices.has(d.index)) ? "Deselect all" : "Select all"}
           </button>
-          <span className="text-[10px] text-muted-foreground font-mono">{basePath}</span>
+          <span className="text-[10px] text-muted-foreground font-mono hidden sm:inline">{basePath}</span>
         </div>
       </div>
       <div className="border rounded-lg divide-y max-h-48 overflow-y-auto">
@@ -281,9 +281,9 @@ function WalletListTab({ wallets, activeWallet, onSelect, onRemove, onRename, on
     return (
       <div key={w.id}>
         <div
-          className={`flex items-center gap-3 p-3 cursor-pointer transition-colors ${
+          className={`flex items-start sm:items-center gap-2 sm:gap-3 p-2.5 sm:p-3 cursor-pointer transition-colors ${
             opts.indented
-              ? `ml-4 border-l-2 pl-4 ${isActive ? "border-l-primary bg-primary/5" : "border-l-border hover:border-l-primary/30 hover:bg-muted/50"}`
+              ? `ml-4 border-l-2 pl-3 sm:pl-4 ${isActive ? "border-l-primary bg-primary/5" : "border-l-border hover:border-l-primary/30 hover:bg-muted/50"}`
               : `rounded-lg border ${isActive ? "border-primary/50 bg-primary/5" : "border-border hover:border-primary/30 hover:bg-muted/50"}`
           } ${isDeriving && !opts.indented ? "rounded-b-none" : ""}`}
           onClick={() => !isEditing && onSelect(w.id)}
@@ -291,7 +291,7 @@ function WalletListTab({ wallets, activeWallet, onSelect, onRemove, onRename, on
           {/* Expand/collapse chevron for mnemonic roots with children */}
           {opts.groupKey && opts.childCount && opts.childCount > 0 ? (
             <button
-              className="shrink-0 p-0.5 -ml-1 rounded hover:bg-muted/80 transition-colors"
+              className="shrink-0 p-0.5 -ml-1 rounded hover:bg-muted/80 transition-colors mt-0.5 sm:mt-0"
               onClick={e => { e.stopPropagation(); toggleCollapse(opts.groupKey!) }}
               title={opts.collapsed ? "Expand" : "Collapse"}
             >
@@ -302,7 +302,7 @@ function WalletListTab({ wallets, activeWallet, onSelect, onRemove, onRename, on
               )}
             </button>
           ) : null}
-          {isActive && <Check className="h-4 w-4 text-primary shrink-0" />}
+          {isActive && <Check className="h-4 w-4 text-primary shrink-0 mt-0.5 sm:mt-0" />}
           <div className="flex-1 min-w-0">
             {isEditing ? (
               <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
@@ -322,7 +322,7 @@ function WalletListTab({ wallets, activeWallet, onSelect, onRemove, onRename, on
               </div>
             ) : (
               <>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-sm font-medium truncate">{w.name}</span>
                   {!opts.indented && (
                     <Badge variant="outline" className="text-[10px] shrink-0">
@@ -330,19 +330,19 @@ function WalletListTab({ wallets, activeWallet, onSelect, onRemove, onRename, on
                     </Badge>
                   )}
                   {w.derivationPath && (
-                    <span className="text-[10px] font-mono text-muted-foreground">{w.derivationPath}</span>
+                    <span className="text-[10px] font-mono text-muted-foreground hidden sm:inline">{w.derivationPath}</span>
                   )}
                   {opts.collapsed && opts.childCount ? (
                     <span className="text-[10px] text-muted-foreground">+{opts.childCount} more</span>
                   ) : null}
                 </div>
-                <p className="text-xs font-mono text-muted-foreground mt-0.5">
+                <p className="text-xs font-mono text-muted-foreground mt-0.5 truncate">
                   {truncateId(w.address, 10, 6)}
                 </p>
               </>
             )}
           </div>
-          <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+          <div className="flex items-center gap-0.5 sm:gap-1 shrink-0" onClick={e => e.stopPropagation()}>
             {opts.showDerive && w.type === "mnemonic" && w.mnemonic && (
               <Button
                 variant="ghost" size="icon" className="h-7 w-7"
@@ -540,8 +540,8 @@ function GenerateTab({ onAdd }: { onAdd: (w: StoredWallet) => void }) {
             24 words
           </button>
         </div>
-        <Button onClick={generateSeed} variant="outline" size="sm">Generate Seed Phrase</Button>
-        <Button onClick={generateKeyPair} variant="outline" size="sm">Generate Key Pair</Button>
+        <Button onClick={generateSeed} variant="outline" size="sm" className="text-xs">Seed Phrase</Button>
+        <Button onClick={generateKeyPair} variant="outline" size="sm" className="text-xs">Key Pair</Button>
       </div>
 
       {mode === "seed" && mnemonic && (
@@ -553,12 +553,12 @@ function GenerateTab({ onAdd }: { onAdd: (w: StoredWallet) => void }) {
 
           <DeriveSelector mnemonic={mnemonic} onSelect={setSelectedDerived} />
 
-          <div className="flex items-end gap-2 pt-2">
+          <div className="flex flex-col sm:flex-row sm:items-end gap-2 pt-2">
             <div className="flex-1 space-y-1">
               <Label className="text-xs">Wallet Name{selectedDerived.length > 1 ? " (prefix)" : ""}</Label>
               <Input value={name} onChange={e => setName(e.target.value)} placeholder="My Wallet" className="h-8 text-sm" />
             </div>
-            <Button size="sm" onClick={saveWallets} disabled={selectedDerived.length === 0}>
+            <Button size="sm" onClick={saveWallets} disabled={selectedDerived.length === 0} className="shrink-0">
               {selectedDerived.length > 1 ? `Save ${selectedDerived.length} Wallets` : "Save to Wallets"}
             </Button>
           </div>

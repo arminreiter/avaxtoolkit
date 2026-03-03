@@ -14,10 +14,10 @@ export function Header() {
   const { activeWallet, openWalletDialog } = useWallet()
   const { resolvedTheme, setTheme } = useTheme()
   return (
-    <header className="flex items-center justify-between px-6 h-11 border-b border-border bg-card/80">
-      <div className="flex items-center gap-4 h-full">
+    <header className="flex items-center justify-between px-3 sm:px-6 h-11 border-b border-border bg-card/80">
+      <div className="flex items-center gap-2 sm:gap-4 h-full min-w-0">
         {/* Network selector */}
-        <div className="flex items-center gap-2 h-full">
+        <div className="flex items-center gap-2 h-full min-w-0">
           <span className="text-[10px] font-mono text-muted-foreground tracking-wider hidden sm:inline">
             NET:
           </span>
@@ -25,10 +25,10 @@ export function Header() {
             const found = allNetworks.find(n => n.id === id)
             if (found) setNetwork(found)
           }}>
-            <SelectTrigger className="w-48 h-7 text-xs font-mono">
+            <SelectTrigger className="w-32 sm:w-48 h-7 text-xs font-mono">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent position="popper" className="w-(--radix-select-trigger-width) font-mono">
+            <SelectContent position="popper" className="font-mono">
               {allNetworks.map(n => (
                 <SelectItem key={n.id} value={n.id}>{n.name}</SelectItem>
               ))}
@@ -37,21 +37,21 @@ export function Header() {
         </div>
 
         {/* Connection status */}
-        <div className="flex items-center gap-2 text-[11px] font-mono">
+        <div className="flex items-center gap-1.5 text-[11px] font-mono shrink-0">
           {isConnected ? (
             <>
               <span className="relative flex h-2 w-2">
                 <span className="pulse-dot absolute inline-flex h-full w-full bg-[#007700] dark:bg-[#00ff41]" />
                 <span className="relative inline-flex h-2 w-2 bg-[#007700] dark:bg-[#00ff41]" />
               </span>
-              <span className="text-[#007700] dark:text-[#00ff41] tracking-wider uppercase">
+              <span className="text-[#007700] dark:text-[#00ff41] tracking-wider uppercase hidden sm:inline">
                 Connected
               </span>
             </>
           ) : (
             <>
-              <span className="h-2 w-2 bg-red-500" />
-              <span className="text-red-500 tracking-wider uppercase">
+              <span className="h-2 w-2 bg-red-500 shrink-0" />
+              <span className="text-red-500 tracking-wider uppercase hidden sm:inline">
                 Offline
               </span>
               {connectionWarning && (
@@ -72,7 +72,7 @@ export function Header() {
       </div>
 
       {/* Right side */}
-      <div className="flex items-center gap-3 h-full">
+      <div className="flex items-center gap-1.5 sm:gap-3 h-full shrink-0">
         <Button
           variant="outline"
           size="sm"
@@ -80,7 +80,9 @@ export function Header() {
           onClick={openWalletDialog}
         >
           <Wallet className="h-3.5 w-3.5" />
-          {activeWallet ? truncateId(activeWallet.address, 6, 4) : "Connect"}
+          <span className="hidden sm:inline">
+            {activeWallet ? truncateId(activeWallet.address, 6, 4) : "Connect"}
+          </span>
         </Button>
         <Button
           variant="ghost"
