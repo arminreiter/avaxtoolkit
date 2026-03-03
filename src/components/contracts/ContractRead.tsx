@@ -1,7 +1,7 @@
 "use client"
 
-import { useState } from "react"
-import { Contract } from "ethers"
+import { useState, useCallback, useMemo } from "react"
+import { Contract } from "ethers/contract"
 import { Accordion } from "@/components/ui/accordion"
 import { FunctionAccordion } from "./FunctionAccordion"
 import { coerceArg, buildAbiFragment } from "@/lib/utils/abi"
@@ -31,29 +31,7 @@ function formatResult(result: unknown): string {
 export function ContractRead({ abi, address, rpcUrl }: ContractReadProps) {
   const [openItems, setOpenItems] = useState<string[]>([])
 
-  if (!abi || abi.length === 0) {
-    return (
-      <div className="py-8 text-center text-muted-foreground">
-        Verify the contract to interact with it
-      </div>
-    )
-  }
-
-  const readFunctions = abi.filter(
-    entry =>
-      entry.type === "function" &&
-      (entry.stateMutability === "view" || entry.stateMutability === "pure")
-  )
-
-  if (readFunctions.length === 0) {
-    return (
-      <div className="py-8 text-center text-muted-foreground">
-        No read functions found
-      </div>
-    )
-  }
-
-  const handleCall = (entry: ABIEntry) => async (args: string[]): Promise<string> => {
+  const handleCall = useCallback((entry: ABIEntry) => async (args: string[]): Promise<string> => {
     const { CChainService } = await import("@/lib/services/cchain.service")
     const provider = CChainService.getProvider(rpcUrl)
     const mutability = entry.stateMutability === "pure" ? "pure" : "view"
@@ -62,6 +40,30 @@ export function ContractRead({ abi, address, rpcUrl }: ContractReadProps) {
     const coercedArgs = (entry.inputs ?? []).map((p, i) => coerceArg(args[i] ?? "", p))
     const result = await contract[entry.name!](...coercedArgs)
     return formatResult(result)
+  }, [address, rpcUrl])
+
+  const readFunctions = useMemo(() => (abi ?? []).filter(
+    entry =>
+      entry.type === "function" &&
+      (entry.stateMutability === "view" || entry.stateMutability === "pure")
+  ), [abi])
+
+  const openSet = useMemo(() => new Set(openItems), [openItems])
+
+  if (!abi || abi.length === 0) {
+    return (
+      <div className="py-8 text-center text-muted-foreground">
+        Verify the contract to interact with it
+      </div>
+    )
+  }
+
+  if (readFunctions.length === 0) {
+    return (
+      <div className="py-8 text-center text-muted-foreground">
+        No read functions found
+      </div>
+    )
   }
 
   return (
@@ -74,7 +76,7 @@ export function ContractRead({ abi, address, rpcUrl }: ContractReadProps) {
             accordionValue={value}
             entry={entry}
             onCall={handleCall(entry)}
-            expanded={openItems.includes(value)}
+            expanded={openSet.has(value)}
             autoExecute
           />
         )

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef, useCallback } from "react"
+import { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import { Download, FileCode } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -12,8 +12,13 @@ interface SourceViewerProps {
 }
 
 export function SourceViewer({ source }: SourceViewerProps) {
-  const fileNames = source ? Object.keys(source.files) : []
+  const fileNames = useMemo(() => source ? Object.keys(source.files) : [], [source])
   const [selectedFile, setSelectedFile] = useState<string>(fileNames[0] ?? "")
+  const prevSourceRef = useRef(source)
+  if (prevSourceRef.current !== source) {
+    prevSourceRef.current = source
+    setSelectedFile(fileNames[0] ?? "")
+  }
   const [highlightedHtml, setHighlightedHtml] = useState<string>("")
   const highlighterRef = useRef<Highlighter | null>(null)
   const codeContainerRef = useRef<HTMLDivElement>(null)
@@ -110,12 +115,6 @@ export function SourceViewer({ source }: SourceViewerProps) {
       }
     }
   }, [highlightedHtml])
-
-  // Reset selected file when source changes
-  useEffect(() => {
-    const names = source ? Object.keys(source.files) : []
-    setSelectedFile(names[0] ?? "")
-  }, [source])
 
   const downloadSource = useCallback(async () => {
     if (!source) return

@@ -1,7 +1,8 @@
 "use client"
 
-import { useState } from "react"
-import { isAddress, parseEther, formatEther } from "ethers"
+import { useState, useMemo } from "react"
+import { isAddress } from "ethers/address"
+import { parseEther, formatEther } from "ethers/utils"
 import { Plus, Trash2, Upload } from "lucide-react"
 import { ToolCard } from "@/components/tools/ToolCard"
 import { LoadingButton } from "@/components/tools/LoadingButton"
@@ -116,18 +117,19 @@ export default function FanOutPage() {
 
       // Balance pre-check (includes estimated gas)
       const totalWei = targets.reduce((sum, t) => sum + parseEther(t.amount), BigInt(0))
-      const feeData = await signer.provider!.getFeeData()
+      const [feeData, balance, baseNonce] = await Promise.all([
+        signer.provider!.getFeeData(),
+        signer.getAddress().then(addr => signer.provider!.getBalance(addr)),
+        signer.getNonce(),
+      ])
       const gasPrice = feeData.maxFeePerGas ?? feeData.gasPrice ?? BigInt(0)
       const totalGas = gasPrice * BigInt(21000) * BigInt(targets.length)
       const totalRequired = totalWei + totalGas
-      const balance = await signer.provider!.getBalance(await signer.getAddress())
       if (totalRequired > balance) {
         setError(`Insufficient balance: need ~${formatEther(totalRequired)} AVAX (incl. gas), have ${formatEther(balance)} AVAX`)
         setLoading(false)
         return
       }
-
-      const baseNonce = await signer.getNonce()
 
       // Phase 1: Broadcast all transactions in parallel with pre-assigned nonces
       const pendingTxs: (Awaited<ReturnType<typeof signer.sendTransaction>> | null)[] = []
@@ -157,12 +159,10 @@ export default function FanOutPage() {
         if (!tx) return
         try {
           await tx.wait()
-          txResults[i].status = "confirmed"
+          setResults(prev => prev.map((r, idx) => idx === i ? { ...r, status: "confirmed" } : r))
         } catch (err) {
-          txResults[i].status = "failed"
-          txResults[i].error = err instanceof Error ? err.message : "Confirmation failed"
+          setResults(prev => prev.map((r, idx) => idx === i ? { ...r, status: "failed", error: err instanceof Error ? err.message : "Confirmation failed" } : r))
         }
-        setResults([...txResults])
       })
       await Promise.allSettled(confirmations)
     } catch (err) {
@@ -171,6 +171,8 @@ export default function FanOutPage() {
       setLoading(false)
     }
   }
+
+  const validCount = useMemo(() => recipients.filter(r => r.address.trim()).length, [recipients])
 
   return (
     <ToolCard title="Fan Out" description="Distribute AVAX from one wallet to multiple addresses.">
@@ -234,7 +236,7 @@ export default function FanOutPage() {
 
         <LoadingButton onClick={handleFanOut} loading={loading}
           disabled={recipients.every(r => !r.address)}>
-          Send to {recipients.filter(r => r.address.trim()).length} Address{recipients.filter(r => r.address.trim()).length !== 1 ? "es" : ""}
+          Send to {validCount} Address{validCount !== 1 ? "es" : ""}
         </LoadingButton>
 
         <TxBatchResultTable results={results} />

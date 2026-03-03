@@ -1,7 +1,8 @@
 "use client"
 
 import { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from "react"
-import { JsonRpcProvider, BrowserProvider, Wallet, type Signer } from "ethers"
+import { JsonRpcProvider, BrowserProvider, type Signer } from "ethers/providers"
+import { Wallet } from "ethers/wallet"
 import { type StoredWallet, isValidWallet, WALLET_STORAGE_KEY, ACTIVE_WALLET_STORAGE_KEY } from "@/lib/models/wallet"
 import { useNetwork } from "@/lib/contexts/network-context"
 
@@ -38,6 +39,24 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const { endpoints } = useNetwork()
   const [wallets, setWallets] = useState<StoredWallet[]>([])
   const [activeWalletId, setActiveWalletId] = useState<string | null>(null)
+
+  // Read persisted wallets from localStorage after hydration (client-only)
+  /* eslint-disable react-hooks/set-state-in-effect -- Intentional: hydrate client-only localStorage state after mount to avoid SSR mismatch */
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(WALLET_STORAGE_KEY)
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        if (Array.isArray(parsed)) {
+          const valid = parsed.filter(isValidWallet)
+          if (valid.length) setWallets(valid)
+        }
+      }
+      const savedActive = localStorage.getItem(ACTIVE_WALLET_STORAGE_KEY)
+      if (savedActive) setActiveWalletId(savedActive)
+    } catch { /* localStorage not available */ }
+  }, [])
+  /* eslint-enable react-hooks/set-state-in-effect */
   const [isWalletDialogOpen, setIsWalletDialogOpen] = useState(false)
 
   const requireResolverRef = useRef<((signer: Signer) => void) | null>(null)
@@ -48,22 +67,6 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   // Provider caching
   const jsonRpcProviderRef = useRef<{ url: string; provider: JsonRpcProvider } | null>(null)
   const browserProviderRef = useRef<BrowserProvider | null>(null)
-
-  /* eslint-disable react-hooks/set-state-in-effect -- SSR-safe: must use useEffect for localStorage to avoid hydration mismatch */
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(WALLET_STORAGE_KEY)
-      if (saved) {
-        const parsed = JSON.parse(saved)
-        if (Array.isArray(parsed)) {
-          setWallets(parsed.filter(isValidWallet))
-        }
-      }
-      const activeId = localStorage.getItem(ACTIVE_WALLET_STORAGE_KEY)
-      if (activeId) setActiveWalletId(activeId)
-    } catch { /* localStorage not available */ }
-  }, [])
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   const persistWallets = useCallback((updated: StoredWallet[]) => {
     try { localStorage.setItem(WALLET_STORAGE_KEY, JSON.stringify(updated)) } catch { /* noop */ }

@@ -1,13 +1,15 @@
 import type { Metadata } from "next"
+import dynamic from "next/dynamic"
 import { Exo_2, Rajdhani, JetBrains_Mono } from "next/font/google"
 import { ThemeProvider } from "@/components/ThemeProvider"
 import { NetworkProvider } from "@/lib/contexts/network-context"
 import { Sidebar } from "@/components/layout/Sidebar"
 import { Header } from "@/components/layout/Header"
 import { WalletProvider } from "@/lib/contexts/wallet-context"
-import { WalletDialog } from "@/components/wallet/WalletDialog"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import "./globals.css"
+
+const WalletDialog = dynamic(() => import("@/components/wallet/WalletDialog").then(m => ({ default: m.WalletDialog })))
 
 const exo2 = Exo_2({ subsets: ["latin"], variable: "--font-sans" })
 const rajdhani = Rajdhani({ subsets: ["latin"], weight: ["400", "500", "600", "700"], variable: "--font-display" })
@@ -18,20 +20,20 @@ export const metadata: Metadata = {
     default: "AVAX Toolkit",
     template: "%s | AVAX Toolkit",
   },
-  description: "Comprehensive toolkit for the Avalanche network — chain explorer, validator dashboards, wallet tools, contract verification, and transaction utilities.",
+  description: "A local-first, open-source toolkit for the Avalanche ecosystem - chain explorer, validator dashboards, wallet tools, contract verification, and transaction utilities.",
   keywords: ["avalanche", "avax", "blockchain", "toolkit", "explorer", "validator", "wallet", "smart contracts"],
   authors: [{ name: "AVAX Toolkit" }],
   metadataBase: new URL("https://avaxtoolkit.com"),
   openGraph: {
     title: "AVAX Toolkit",
-    description: "Comprehensive toolkit for the Avalanche network",
+    description: "A local-first, open-source toolkit for the Avalanche ecosystem - chain explorer, validator dashboards, wallet tools, contract verification, and transaction utilities.",
     type: "website",
     images: [{ url: "/opengraph-image.png", width: 1200, height: 630, alt: "AVAX Toolkit Dashboard" }],
   },
   twitter: {
     card: "summary_large_image",
     title: "AVAX Toolkit",
-    description: "Comprehensive toolkit for the Avalanche network",
+    description: "A local-first, open-source toolkit for the Avalanche ecosystem - chain explorer, validator dashboards, wallet tools, contract verification, and transaction utilities.",
     images: ["/opengraph-image.png"],
   },
 }

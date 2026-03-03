@@ -60,44 +60,52 @@ interface NetworkContextValue {
 
 const NetworkContext = createContext<NetworkContextValue | null>(null)
 
+/** Read custom networks from localStorage (returns [] on failure or SSR) */
+function readCustomNetworks(): Network[] {
+  if (typeof window === "undefined") return []
+  try {
+    const savedCustom = localStorage.getItem(STORAGE_KEY_CUSTOM)
+    if (savedCustom) {
+      const raw = JSON.parse(savedCustom)
+      if (Array.isArray(raw)) return raw.filter(isValidNetwork)
+    }
+  } catch { /* localStorage not available */ }
+  return []
+}
+
 export function NetworkProvider({ children }: { children: ReactNode }) {
-  const [network, setNetworkState] = useState<Network>(DEFAULT_NETWORKS[0])
-  const [isConnected, setIsConnected] = useState(false)
-  const [connectionWarning, setConnectionWarning] = useState<string | null>(null)
   const [customNetworks, setCustomNetworks] = useState<Network[]>([])
 
-  /* eslint-disable react-hooks/set-state-in-effect -- SSR-safe: must use useEffect for localStorage to avoid hydration mismatch */
+  const [network, setNetworkState] = useState<Network>(DEFAULT_NETWORKS[0])
+
+  // Read persisted network/custom networks from localStorage after hydration (client-only)
+  /* eslint-disable react-hooks/set-state-in-effect -- Intentional: hydrate client-only localStorage state after mount to avoid SSR mismatch */
   useEffect(() => {
     try {
-      const savedId = localStorage.getItem(STORAGE_KEY_NETWORK)
-      const savedCustom = localStorage.getItem(STORAGE_KEY_CUSTOM)
-
-      let parsedCustom: Network[] = []
-      if (savedCustom) {
-        const raw = JSON.parse(savedCustom)
-        if (Array.isArray(raw)) {
-          parsedCustom = raw.filter(isValidNetwork)
-        }
-        setCustomNetworks(parsedCustom)
-      }
-
-      if (savedId) {
-        const allNets = [...DEFAULT_NETWORKS, ...parsedCustom]
-        const found = allNets.find(n => n.id === savedId)
-        if (found) setNetworkState(found)
-      }
+      const parsedCustom = readCustomNetworks()
+      if (parsedCustom.length) setCustomNetworks(parsedCustom)
+      const allNets = [...DEFAULT_NETWORKS, ...parsedCustom]
 
       const params = new URLSearchParams(window.location.search)
       const urlNetwork = params.get("network")
       if (urlNetwork) {
-        const found = [...DEFAULT_NETWORKS, ...parsedCustom].find(n => n.id === urlNetwork)
-        if (found) setNetworkState(found)
+        const found = allNets.find(n => n.id === urlNetwork)
+        if (found) { setNetworkState(found); return }
       }
-    } catch {
-      // localStorage not available
-    }
-  }, [])
 
+      const savedId = localStorage.getItem(STORAGE_KEY_NETWORK)
+      if (savedId) {
+        const found = allNets.find(n => n.id === savedId)
+        if (found) { setNetworkState(found); return }
+      }
+    } catch { /* localStorage not available */ }
+  }, [])
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  const [isConnected, setIsConnected] = useState(false)
+  const [connectionWarning, setConnectionWarning] = useState<string | null>(null)
+
+  /* eslint-disable react-hooks/set-state-in-effect -- Intentional: reset connection state synchronously when network changes before async health check */
   useEffect(() => {
     let cancelled = false
     setIsConnected(false)

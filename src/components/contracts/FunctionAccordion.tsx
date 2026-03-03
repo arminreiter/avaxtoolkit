@@ -54,6 +54,10 @@ export function FunctionAccordion({
   const [result, setResult] = useState("")
   const [error, setError] = useState("")
 
+  // Store onCall in a ref to avoid re-triggering effects when the callback identity changes
+  const onCallRef = useRef(onCall)
+  onCallRef.current = onCall
+
   // Auto-execute on first expand for zero-arg read functions
   const autoExecuted = useRef(false)
   useEffect(() => {
@@ -62,12 +66,12 @@ export function FunctionAccordion({
       setLoading(true)
       setResult("")
       setError("")
-      onCall([])
+      onCallRef.current([])
         .then(res => setResult(res))
         .catch(err => setError(truncateError(err instanceof Error ? err.message : String(err))))
         .finally(() => setLoading(false))
     }
-  }, [autoExecute, expanded, inputs.length, loading, onCall])
+  }, [autoExecute, expanded, inputs.length, loading])
 
   const functionName = entry.name ?? "constructor"
   const signature = `${functionName}(${inputs.map((p) => `${p.type} ${p.name}`).join(", ")})`
@@ -90,7 +94,7 @@ export function FunctionAccordion({
     setResult("")
     setError("")
     try {
-      const res = await onCall(args)
+      const res = await onCallRef.current(args)
       setResult(res)
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
@@ -98,7 +102,7 @@ export function FunctionAccordion({
     } finally {
       setLoading(false)
     }
-  }, [onCall, args])
+  }, [args])
 
   return (
     <AccordionItem value={accordionValue ?? functionName} className={className}>

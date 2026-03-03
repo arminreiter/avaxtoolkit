@@ -17,7 +17,6 @@ export function NetworkHealth() {
   useEffect(() => {
     let cancelled = false
     async function fetch() {
-      setLoading(true)
       const [healthResult, peersResult] = await Promise.allSettled([
         AvalancheService.healthCheck(network.baseUrl),
         AvalancheService.getPeers(network.baseUrl),

@@ -1,7 +1,8 @@
 "use client"
 
 import { useState } from "react"
-import { Wallet, Mnemonic, randomBytes } from "ethers"
+import { Wallet, Mnemonic } from "ethers/wallet"
+import { randomBytes } from "ethers/crypto"
 import { ToolCard } from "@/components/tools/ToolCard"
 import { LoadingButton } from "@/components/tools/LoadingButton"
 import { OutputDisplay } from "@/components/tools/OutputDisplay"

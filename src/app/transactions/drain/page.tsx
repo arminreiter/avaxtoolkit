@@ -1,7 +1,10 @@
 "use client"
 
-import { useState } from "react"
-import { isAddress, formatEther, Wallet, type TransactionRequest } from "ethers"
+import { useState, useMemo } from "react"
+import { isAddress } from "ethers/address"
+import { formatEther } from "ethers/utils"
+import { Wallet } from "ethers/wallet"
+import { type TransactionRequest } from "ethers/providers"
 import { CChainService } from "@/lib/services/cchain.service"
 import { Plus, Trash2 } from "lucide-react"
 import { ToolCard } from "@/components/tools/ToolCard"
@@ -108,11 +111,13 @@ export default function DrainPage() {
       }))
       setResults([...drainResults])
 
+      const feeData = await provider.getFeeData()
+      const balances = await Promise.all(walletsToSign.map(w => provider.getBalance(w.address)))
+
       for (let i = 0; i < walletsToSign.length; i++) {
         try {
           const wallet = walletsToSign[i]
-          const balance = await provider.getBalance(wallet.address)
-          const feeData = await provider.getFeeData()
+          const balance = balances[i]
           const effectiveGasPrice = feeData.maxFeePerGas ?? feeData.gasPrice
           if (!effectiveGasPrice) {
             drainResults[i].status = "skipped"
@@ -166,7 +171,7 @@ export default function DrainPage() {
     }
   }
 
-  const storedWalletsWithKeys = wallets.filter(w => w.privateKey)
+  const storedWalletsWithKeys = useMemo(() => wallets.filter(w => w.privateKey), [wallets])
 
   return (
     <ToolCard title="Drain" description="Consolidate balances from multiple wallets into one destination.">

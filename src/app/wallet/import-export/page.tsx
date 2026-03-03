@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Wallet } from "ethers"
+import { Wallet } from "ethers/wallet"
 import { ToolCard } from "@/components/tools/ToolCard"
 import { FormField } from "@/components/tools/FormField"
 import { LoadingButton } from "@/components/tools/LoadingButton"

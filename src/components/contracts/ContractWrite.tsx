@@ -1,7 +1,9 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { Contract, parseEther, type Signer, type TransactionResponse } from "ethers"
+import { useState, useEffect, useCallback, useMemo } from "react"
+import { Contract } from "ethers/contract"
+import { parseEther } from "ethers/utils"
+import { type Signer, type TransactionResponse } from "ethers/providers"
 import { Wallet } from "lucide-react"
 import { Accordion } from "@/components/ui/accordion"
 import { Button } from "@/components/ui/button"
@@ -31,7 +33,7 @@ export function ContractWrite({ abi, address }: ContractWriteProps) {
     return () => { cancelled = true }
   }, [activeWallet, getSigner])
 
-  const walletStatus = activeWallet ? (
+  const walletStatus = useMemo(() => activeWallet ? (
     <div className="flex items-center justify-between rounded-lg border border-green-500/30 bg-green-500/5 p-3">
       <div className="flex items-center gap-2">
         <Wallet className="h-4 w-4 text-green-500" />
@@ -44,37 +46,9 @@ export function ContractWrite({ abi, address }: ContractWriteProps) {
     <Button variant="outline" className="w-full gap-2" onClick={openWalletDialog}>
       <Wallet className="h-4 w-4" /> Connect Wallet to Write
     </Button>
-  )
+  ), [activeWallet, openWalletDialog])
 
-  if (!abi || abi.length === 0) {
-    return (
-      <div className="space-y-4">
-        {walletStatus}
-        <div className="py-8 text-center text-muted-foreground">
-          Verify the contract to interact with it
-        </div>
-      </div>
-    )
-  }
-
-  const writeFunctions = abi.filter(
-    entry =>
-      entry.type === "function" &&
-      (entry.stateMutability === "nonpayable" || entry.stateMutability === "payable")
-  )
-
-  if (writeFunctions.length === 0) {
-    return (
-      <div className="space-y-4">
-        {walletStatus}
-        <div className="py-8 text-center text-muted-foreground">
-          No write functions found
-        </div>
-      </div>
-    )
-  }
-
-  const handleCall = (entry: ABIEntry) => async (args: string[]): Promise<string> => {
+  const handleCall = useCallback((entry: ABIEntry) => async (args: string[]): Promise<string> => {
     if (!signer) {
       throw new Error("Connect a wallet first")
     }
@@ -98,6 +72,34 @@ export function ContractWrite({ abi, address }: ContractWriteProps) {
       return `Transaction sent: ${tx.hash} (receipt unavailable — tx may have been dropped)`
     }
     return `Transaction confirmed: ${receipt.hash}`
+  }, [address, signer])
+
+  const writeFunctions = useMemo(() => (abi ?? []).filter(
+    entry =>
+      entry.type === "function" &&
+      (entry.stateMutability === "nonpayable" || entry.stateMutability === "payable")
+  ), [abi])
+
+  if (!abi || abi.length === 0) {
+    return (
+      <div className="space-y-4">
+        {walletStatus}
+        <div className="py-8 text-center text-muted-foreground">
+          Verify the contract to interact with it
+        </div>
+      </div>
+    )
+  }
+
+  if (writeFunctions.length === 0) {
+    return (
+      <div className="space-y-4">
+        {walletStatus}
+        <div className="py-8 text-center text-muted-foreground">
+          No write functions found
+        </div>
+      </div>
+    )
   }
 
   return (

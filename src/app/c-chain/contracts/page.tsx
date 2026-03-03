@@ -9,8 +9,8 @@ import { ToolCard } from "@/components/tools/ToolCard"
 import { FormField } from "@/components/tools/FormField"
 import { LoadingButton } from "@/components/tools/LoadingButton"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
-import { VerificationStatus } from "@/components/contracts/VerificationStatus"
-import { VerificationInstructions } from "@/components/contracts/VerificationInstructions"
+const VerificationStatus = dynamic(() => import("@/components/contracts/VerificationStatus").then(m => ({ default: m.VerificationStatus })))
+const VerificationInstructions = dynamic(() => import("@/components/contracts/VerificationInstructions").then(m => ({ default: m.VerificationInstructions })))
 import { AlertTriangle } from "lucide-react"
 
 const SourceViewer = dynamic(() => import("@/components/contracts/SourceViewer").then(m => ({ default: m.SourceViewer })), { ssr: false })

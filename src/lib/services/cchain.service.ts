@@ -1,4 +1,6 @@
-import { ethers } from "ethers"
+import { JsonRpcProvider, Network } from "ethers/providers"
+import { Contract } from "ethers/contract"
+import { formatEther, formatUnits } from "ethers/utils"
 
 const ERC20_ABI = [
   "function name() view returns (string)",
@@ -9,7 +11,7 @@ const ERC20_ABI = [
 ]
 
 export class CChainService {
-  private static providers = new Map<string, ethers.JsonRpcProvider>()
+  private static providers = new Map<string, JsonRpcProvider>()
   private static MAX_PROVIDERS = 10
   private static rawResponses: Record<string, unknown> = {}
 
@@ -29,10 +31,10 @@ export class CChainService {
       // Use staticNetwork when chainId is known to skip _detectNetwork,
       // preventing infinite retry loops when the node is unreachable.
       if (chainId) {
-        const network = ethers.Network.from(chainId)
-        provider = new ethers.JsonRpcProvider(rpcUrl, network, { staticNetwork: network })
+        const network = Network.from(chainId)
+        provider = new JsonRpcProvider(rpcUrl, network, { staticNetwork: network })
       } else {
-        provider = new ethers.JsonRpcProvider(rpcUrl)
+        provider = new JsonRpcProvider(rpcUrl)
       }
       CChainService.providers.set(rpcUrl, provider)
     }
@@ -111,13 +113,13 @@ export class CChainService {
     CChainService.rawResponses["eth_getBalance"] = raw
     return {
       wei: balance.toString(),
-      avax: ethers.formatEther(balance),
+      avax: formatEther(balance),
     }
   }
 
   static async getTokenInfo(rpcUrl: string, contractAddress: string) {
     const provider = CChainService.getProvider(rpcUrl)
-    const contract = new ethers.Contract(contractAddress, ERC20_ABI, provider)
+    const contract = new Contract(contractAddress, ERC20_ABI, provider)
     const [name, symbol, decimals, totalSupply] = await Promise.all([
       contract.name(),
       contract.symbol(),
@@ -144,7 +146,7 @@ export class CChainService {
     return {
       gasPrice: feeData.gasPrice?.toString() ?? "0",
       gasPriceGwei: feeData.gasPrice
-        ? ethers.formatUnits(feeData.gasPrice, "gwei")
+        ? formatUnits(feeData.gasPrice, "gwei")
         : "0",
       maxFeePerGas: feeData.maxFeePerGas?.toString(),
       maxPriorityFeePerGas: feeData.maxPriorityFeePerGas?.toString(),
@@ -169,7 +171,7 @@ export class CChainService {
     args: unknown[] = [],
   ) {
     const provider = CChainService.getProvider(rpcUrl)
-    const contract = new ethers.Contract(contractAddress, abi, provider)
+    const contract = new Contract(contractAddress, abi, provider)
     const fn = contract[method]
     if (typeof fn !== "function") {
       throw new Error(`Method "${method}" not found in contract ABI`)

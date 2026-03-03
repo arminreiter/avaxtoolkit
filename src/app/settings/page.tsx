@@ -18,6 +18,15 @@ import { Separator } from "@/components/ui/separator"
 import { Label } from "@/components/ui/label"
 import { Trash2, FlaskConical, Download, Upload, AlertTriangle } from "lucide-react"
 
+function isValidRpcUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url)
+    return parsed.protocol === "http:" || parsed.protocol === "https:"
+  } catch {
+    return false
+  }
+}
+
 export default function SettingsPage() {
   const {
     network: activeNetwork,
@@ -25,6 +34,7 @@ export default function SettingsPage() {
     customNetworks,
     addCustomNetwork,
     removeCustomNetwork,
+    allNetworks,
   } = useNetwork()
   const { wallets } = useWallet()
 
@@ -98,15 +108,6 @@ export default function SettingsPage() {
       setAddError("Connection failed. Could not reach the RPC endpoint.")
     } finally {
       setTesting(false)
-    }
-  }
-
-  function isValidRpcUrl(url: string): boolean {
-    try {
-      const parsed = new URL(url)
-      return parsed.protocol === "http:" || parsed.protocol === "https:"
-    } catch {
-      return false
     }
   }
 
@@ -453,7 +454,7 @@ export default function SettingsPage() {
               { name: "Anvil / Hardhat", url: "http://127.0.0.1:8545", chainId: 31337 },
               { name: "Ganache", url: "http://127.0.0.1:7545", chainId: 1337 },
             ].map(preset => {
-              const exists = [...DEFAULT_NETWORKS, ...customNetworks].some(n =>
+              const exists = allNetworks.some(n =>
                 n.baseUrl === preset.url
               )
               return (

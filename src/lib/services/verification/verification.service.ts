@@ -18,20 +18,17 @@ export class VerificationService {
   }
 
   static async checkAll(address: string, chainId: number, rpcUrl?: string): Promise<AggregatedVerification> {
-    const { results, source, abi } = await this.checkProviders(address, chainId)
+    const [checkResult, detected] = await Promise.all([
+      this.checkProviders(address, chainId),
+      rpcUrl ? detectProxy(address, rpcUrl).catch(() => null) : Promise.resolve(null),
+    ])
+    const { results, source, abi } = checkResult
 
     // Proxy detection
     let proxy: ProxyDetails = { isProxy: false }
 
-    if (rpcUrl) {
-      try {
-        const detected = await detectProxy(address, rpcUrl)
-        if (detected.isProxy) {
-          proxy = { ...detected }
-        }
-      } catch {
-        // On-chain detection failed, fall through to API flag
-      }
+    if (detected?.isProxy) {
+      proxy = { ...detected }
     }
 
     if (!proxy.isProxy) {
@@ -59,15 +56,19 @@ export class VerificationService {
   }
 
   private static async fetchConstructorArgs(address: string, chainId: number): Promise<string | undefined> {
-    for (const provider of providers) {
-      try {
-        const source = await provider.getSource(address, chainId)
-        if (source.constructorArgs) return source.constructorArgs
-      } catch {
-        // Try next provider
-      }
+    try {
+      const args = await Promise.any(
+        providers.map(async (p) => {
+          const source = await p.getSource(address, chainId)
+          if (source.constructorArgs) return source.constructorArgs
+          throw new Error("No constructor args from this provider")
+        })
+      )
+      return args
+    } catch {
+      // AggregateError — all providers failed or had no constructor args
+      return undefined
     }
-    return undefined
   }
 
   private static async checkProviders(address: string, chainId: number): Promise<{
@@ -91,28 +92,20 @@ export class VerificationService {
 
     let source: ContractSource | null = null
     let abi: ABIEntry[] | null = null
-    const verifiedProvider = results.find(r => r.verified)
-    if (verifiedProvider) {
-      const provider = providers.find(p => p.id === verifiedProvider.provider)
-      if (provider) {
+    const verifiedProviders = results.filter(r => r.verified)
+    if (verifiedProviders.length > 0) {
+      const matchingProviders = verifiedProviders
+        .map(r => providers.find(p => p.id === r.provider))
+        .filter((p): p is VerificationProvider => p !== undefined)
+
+      if (matchingProviders.length > 0) {
         try {
-          source = await provider.getSource(address, chainId)
+          source = await Promise.any(
+            matchingProviders.map(p => p.getSource(address, chainId))
+          )
           abi = source.abi ?? null
         } catch {
-          for (const result of results) {
-            if (result.verified && result.provider !== verifiedProvider.provider) {
-              const fallback = providers.find(p => p.id === result.provider)
-              if (fallback) {
-                try {
-                  source = await fallback.getSource(address, chainId)
-                  abi = source.abi ?? null
-                  break
-                } catch {
-                  // Continue to next
-                }
-              }
-            }
-          }
+          // AggregateError — all verified providers failed to return source
         }
       }
     }

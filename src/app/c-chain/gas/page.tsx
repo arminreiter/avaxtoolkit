@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
-import { formatUnits } from "ethers"
+import { formatUnits } from "ethers/utils"
 import { useNetwork } from "@/lib/contexts/network-context"
 import { CChainService } from "@/lib/services/cchain.service"
 import { ToolCard } from "@/components/tools/ToolCard"
@@ -14,6 +14,11 @@ interface GasData {
   maxFeePerGas: string | undefined
   maxPriorityFeePerGas: string | undefined
   currentBlock: number
+}
+
+function formatGwei(weiValue: string | undefined): string {
+  if (!weiValue) return "N/A"
+  return `${formatUnits(weiValue, "gwei")} gwei`
 }
 
 export default function GasTrackerPage() {
@@ -49,11 +54,6 @@ export default function GasTrackerPage() {
   useEffect(() => {
     fetchGasData()
   }, [fetchGasData])
-
-  function formatGwei(weiValue: string | undefined): string {
-    if (!weiValue) return "N/A"
-    return `${formatUnits(weiValue, "gwei")} gwei`
-  }
 
   return (
     <ToolCard

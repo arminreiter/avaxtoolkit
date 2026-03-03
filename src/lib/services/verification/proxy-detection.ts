@@ -1,4 +1,7 @@
-import { ZeroAddress, getAddress, JsonRpcProvider, Contract } from "ethers"
+import { ZeroAddress } from "ethers/constants"
+import { getAddress } from "ethers/address"
+import { JsonRpcProvider } from "ethers/providers"
+import { Contract } from "ethers/contract"
 
 /**
  * EIP-1967 storage slots for proxy detection.
@@ -40,10 +43,15 @@ export async function detectProxy(address: string, rpcUrl: string): Promise<Prox
   const provider = new JsonRpcProvider(rpcUrl)
 
   try {
-    // Check EIP-1967 implementation slot
-    try {
-      const implSlot = await provider.getStorage(address, SLOTS.implementation)
-      const implAddr = slotToAddress(implSlot)
+    // Read implementation and beacon slots in parallel
+    const [implResult, beaconResult] = await Promise.allSettled([
+      provider.getStorage(address, SLOTS.implementation),
+      provider.getStorage(address, SLOTS.beacon),
+    ])
+
+    // Check EIP-1967 implementation slot first
+    if (implResult.status === "fulfilled") {
+      const implAddr = slotToAddress(implResult.value)
       if (implAddr) {
         // Also check admin slot
         let adminAddress: string | undefined
@@ -60,14 +68,11 @@ export async function detectProxy(address: string, rpcUrl: string): Promise<Prox
           adminAddress,
         }
       }
-    } catch {
-      // Slot read failed, continue
     }
 
     // Check EIP-1967 beacon slot
-    try {
-      const beaconSlot = await provider.getStorage(address, SLOTS.beacon)
-      const beaconAddr = slotToAddress(beaconSlot)
+    if (beaconResult.status === "fulfilled") {
+      const beaconAddr = slotToAddress(beaconResult.value)
       if (beaconAddr) {
         // Call implementation() on the beacon to get the actual impl
         try {
@@ -94,8 +99,6 @@ export async function detectProxy(address: string, rpcUrl: string): Promise<Prox
           }
         }
       }
-    } catch {
-      // Slot read failed, continue
     }
 
     // Fallback: EIP-897 — try calling implementation() directly on the contract

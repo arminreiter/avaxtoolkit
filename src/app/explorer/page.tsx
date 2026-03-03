@@ -1,7 +1,7 @@
 "use client"
 
-import { useEffect, useRef, useState, useMemo, useCallback } from "react"
-import { ethers } from "ethers"
+import { useEffect, useRef, useState, useMemo, useCallback, startTransition } from "react"
+import { formatUnits, formatEther } from "ethers/utils"
 import { ChevronRight, Pause, Play, Loader2, ArrowRight } from "lucide-react"
 import { useNetwork } from "@/lib/contexts/network-context"
 import { CChainService } from "@/lib/services/cchain.service"
@@ -114,14 +114,14 @@ function TransactionDetail({ tx }: { tx: TxDetail }) {
           {
             label: "Gas Price",
             value: tx.gasPrice !== "0"
-              ? `${parseFloat(ethers.formatUnits(tx.gasPrice, "gwei")).toFixed(4)} gwei`
+              ? `${parseFloat(formatUnits(tx.gasPrice, "gwei")).toFixed(4)} gwei`
               : "\u2014",
             mono: true,
           },
           {
             label: "Effective Gas Price",
             value: tx.effectiveGasPrice !== "0"
-              ? `${parseFloat(ethers.formatUnits(tx.effectiveGasPrice, "gwei")).toFixed(4)} gwei`
+              ? `${parseFloat(formatUnits(tx.effectiveGasPrice, "gwei")).toFixed(4)} gwei`
               : "\u2014",
             mono: true,
           },
@@ -520,15 +520,15 @@ export default function ExplorerPage() {
 
   const [blockTxData, setBlockTxData] = useState<Record<number, TxDetail[]>>({})
   const [blockTxLoading, setBlockTxLoading] = useState<Record<number, boolean>>({})
-  const [blockFees, setBlockFees] = useState<Record<number, string>>({})
+  const [exactBlockFees, setExactBlockFees] = useState<Record<number, string>>({})
 
   const lastBlockRef = useRef<number>(-1)
   const [newBlockNumbers, setNewBlockNumbers] = useState<Set<number>>(new Set())
   const pollingInFlight = useRef(false)
-  const txDetailsRef = useRef(txDetails)
   const pausedRef = useRef(paused)
-  useEffect(() => { pausedRef.current = paused }, [paused])
-  useEffect(() => { txDetailsRef.current = txDetails }, [txDetails])
+  pausedRef.current = paused
+  const txDetailsRef = useRef(txDetails)
+  txDetailsRef.current = txDetails
 
   const mapBlock = useCallback(
     (b: NonNullable<Awaited<ReturnType<typeof CChainService.getBlock>>>): BlockInfo => ({
@@ -560,7 +560,7 @@ export default function ExplorerPage() {
       setTxLoading({})
       setBlockTxData({})
       setBlockTxLoading({})
-      setBlockFees({})
+      setExactBlockFees({})
       lastBlockRef.current = -1
       setNewBlockNumbers(new Set())
       pollingInFlight.current = false
@@ -631,13 +631,15 @@ export default function ExplorerPage() {
 
         if (newBlocks.length === 0) return
 
-        setNewBlockNumbers((prev) => {
-          const next = new Set(prev)
-          newBlocks.forEach((b) => next.add(b.number))
-          return next
+        startTransition(() => {
+          setNewBlockNumbers((prev) => {
+            const next = new Set(prev)
+            newBlocks.forEach((b) => next.add(b.number))
+            return next
+          })
         })
 
-        const highestFetched = Math.max(...newBlocks.map((b) => b.number))
+        const highestFetched = newBlocks[newBlocks.length - 1].number
         lastBlockRef.current = highestFetched
 
         setBlocks((prev) =>
@@ -645,10 +647,12 @@ export default function ExplorerPage() {
         )
 
         setTimeout(() => {
-          setNewBlockNumbers((prev) => {
-            const next = new Set(prev)
-            newBlocks.forEach((b) => next.delete(b.number))
-            return next
+          startTransition(() => {
+            setNewBlockNumbers((prev) => {
+              const next = new Set(prev)
+              newBlocks.forEach((b) => next.delete(b.number))
+              return next
+            })
           })
         }, 600)
       } catch {
@@ -662,20 +666,16 @@ export default function ExplorerPage() {
   }, [rpcUrl, mapBlock])
 
   // Compute estimated block fees from baseFeePerGas * gasUsed (no extra RPC calls).
-  // Exact fees replace estimates when a block is expanded and receipts are fetched.
-  useEffect(() => {
-    if (blocks.length === 0) return
-    const newFees: Record<number, string> = {}
+  // Exact fees (from receipts) replace estimates when a block is expanded.
+  const blockFees = useMemo(() => {
+    const estimated: Record<number, string> = {}
     for (const b of blocks) {
-      if (blockFees[b.number] !== undefined) continue
       if (b.baseFeePerGas) {
-        newFees[b.number] = ethers.formatEther(b.baseFeePerGas * b.gasUsed)
+        estimated[b.number] = formatEther(b.baseFeePerGas * b.gasUsed)
       }
     }
-    if (Object.keys(newFees).length > 0) {
-      setBlockFees((prev) => ({ ...prev, ...newFees }))
-    }
-  }, [blocks, blockFees])
+    return { ...estimated, ...exactBlockFees }
+  }, [blocks, exactBlockFees])
 
   const handleToggleBlock = useCallback(
     async (blockNumber: number) => {
@@ -708,7 +708,7 @@ export default function ExplorerPage() {
             hash: tx.hash,
             from: tx.from,
             to: tx.to ?? null,
-            value: ethers.formatEther(BigInt(tx.value ?? "0x0")),
+            value: formatEther(BigInt(tx.value ?? "0x0")),
             gasUsed: BigInt(gasUsed).toString(),
             gasPrice: BigInt(tx.gasPrice ?? "0x0").toString(),
             effectiveGasPrice: BigInt(effectiveGasPrice).toString(),
@@ -720,7 +720,7 @@ export default function ExplorerPage() {
             txType: parseInt(tx.type ?? "0x0", 16),
             transactionIndex: receipt ? parseInt(receipt.transactionIndex, 16) : idx,
             method: decodeMethodName(tx.input),
-            txFee: ethers.formatEther(fee),
+            txFee: formatEther(fee),
           }
         })
 
@@ -733,7 +733,7 @@ export default function ExplorerPage() {
         })
 
         setBlockTxData((prev) => ({ ...prev, [blockNumber]: txs }))
-        setBlockFees((prev) => ({ ...prev, [blockNumber]: ethers.formatEther(totalFees) }))
+        setExactBlockFees((prev) => ({ ...prev, [blockNumber]: formatEther(totalFees) }))
       } catch {
         // Silent failure
       } finally {
@@ -759,13 +759,13 @@ export default function ExplorerPage() {
           ? (receipt as unknown as { effectiveGasPrice?: bigint }).effectiveGasPrice?.toString() ?? tx.gasPrice?.toString() ?? "0"
           : tx.gasPrice?.toString() ?? "0"
         const gasUsed = receipt?.gasUsed?.toString() ?? "0"
-        const txFee = ethers.formatEther(BigInt(gasUsed) * BigInt(effectiveGasPrice))
+        const txFee = formatEther(BigInt(gasUsed) * BigInt(effectiveGasPrice))
 
         const detail: TxDetail = {
           hash: tx.hash,
           from: tx.from,
           to: tx.to ?? null,
-          value: ethers.formatEther(tx.value),
+          value: formatEther(tx.value),
           gasUsed,
           gasPrice: tx.gasPrice?.toString() ?? "0",
           effectiveGasPrice,

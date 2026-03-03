@@ -1,7 +1,9 @@
 "use client"
 
 import { useState, useMemo, useEffect, useRef } from "react"
-import { HDNodeWallet, Wallet as EthersWallet, Mnemonic, BrowserProvider, randomBytes } from "ethers"
+import { HDNodeWallet, Wallet as EthersWallet, Mnemonic } from "ethers/wallet"
+import { randomBytes } from "ethers/crypto"
+import { BrowserProvider } from "ethers/providers"
 import { Wallet, Plus, Download, Link, Trash2, Check, Pencil, ChevronDown, ChevronRight, GitBranch, FlaskConical, Eye, EyeOff } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
@@ -18,6 +20,8 @@ import { truncateId } from "@/lib/utils"
 export function WalletDialog() {
   const { wallets, activeWallet, setActiveWallet, addWallet, removeWallet, renameWallet,
     isWalletDialogOpen, closeWalletDialog } = useWallet()
+
+  const existingAddresses = useMemo(() => wallets.map(w => w.address.toLowerCase()), [wallets])
 
   return (
     <Dialog open={isWalletDialogOpen} onOpenChange={(open) => { if (!open) closeWalletDialog() }}>
@@ -75,7 +79,7 @@ export function WalletDialog() {
           </TabsContent>
 
           <TabsContent value="devtools" className="mt-4 flex-1 min-h-0 overflow-y-auto">
-            <DevWalletsTab onAdd={addWallet} existingAddresses={wallets.map(w => w.address.toLowerCase())} />
+            <DevWalletsTab onAdd={addWallet} existingAddresses={existingAddresses} />
           </TabsContent>
         </Tabs>
       </DialogContent>
@@ -213,20 +217,21 @@ function groupWallets(wallets: StoredWallet[]): WalletGroup[] {
     }
   }
 
-  // Sort each group by derivation index
-  for (const group of mnemonicGroups.values()) {
-    group.sort((a, b) => {
+  // Sort each group by derivation index (using toSorted to avoid mutation)
+  const sortedGroups = new Map<string, StoredWallet[]>()
+  for (const [key, group] of mnemonicGroups.entries()) {
+    sortedGroups.set(key, group.toSorted((a, b) => {
       const idxA = parseInt(a.derivationPath?.split("/").pop() ?? "0")
       const idxB = parseInt(b.derivationPath?.split("/").pop() ?? "0")
       return idxA - idxB
-    })
+    }))
   }
 
   // Build output preserving original order (first occurrence of each group)
   for (const w of wallets) {
     if (seen.has(w.id)) continue
     if (w.type === "mnemonic" && w.mnemonic) {
-      const group = mnemonicGroups.get(w.mnemonic)!
+      const group = sortedGroups.get(w.mnemonic)!
       if (seen.has(group[0].id)) {
         // Already emitted this group
         continue

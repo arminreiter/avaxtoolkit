@@ -1,3 +1,4 @@
+import { memo } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { type LucideIcon } from "lucide-react"
 import { InfoTooltip } from "@/components/tools/InfoTooltip"
@@ -21,7 +22,7 @@ interface StatCardProps {
   delay?: number
 }
 
-export function StatCard({ label, value, icon: Icon, loading, rpcInfo, iconColor, delay = 0 }: StatCardProps) {
+export const StatCard = memo(function StatCard({ label, value, icon: Icon, loading, rpcInfo, iconColor, delay = 0 }: StatCardProps) {
   const colors = iconColor ? iconColorMap[iconColor] : null
 
   return (
@@ -50,4 +51,4 @@ export function StatCard({ label, value, icon: Icon, loading, rpcInfo, iconColor
       </CardContent>
     </Card>
   )
-}
+})

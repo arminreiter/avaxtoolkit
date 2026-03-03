@@ -53,8 +53,9 @@ export function DataTable<T extends Record<string, unknown>>({
   const [page, setPage] = useState(0)
 
   const filtered = useMemo(() => {
-    if (!search.trim()) return data
-    const term = search.trim().toLowerCase()
+    const trimmed = search.trim()
+    if (!trimmed) return data
+    const term = trimmed.toLowerCase()
     return data.filter(row =>
       columns.some(col => {
         const v = col.sortValue ? col.sortValue(row) : defaultSortValue(row, col.key)
@@ -67,9 +68,10 @@ export function DataTable<T extends Record<string, unknown>>({
     if (!sortKey) return filtered
     const col = columns.find(c => c.key === sortKey)
     if (!col) return filtered
+    const accessor = col.sortValue ?? ((row: T) => defaultSortValue(row, col.key))
     return [...filtered].sort((a, b) => {
-      const aVal = col.sortValue ? col.sortValue(a) : defaultSortValue(a, col.key)
-      const bVal = col.sortValue ? col.sortValue(b) : defaultSortValue(b, col.key)
+      const aVal = accessor(a)
+      const bVal = accessor(b)
       let cmp = 0
       if (typeof aVal === "number" && typeof bVal === "number") {
         cmp = aVal - bVal

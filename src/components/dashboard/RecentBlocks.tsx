@@ -23,17 +23,17 @@ export function RecentBlocks() {
   useEffect(() => {
     let cancelled = false
     async function fetchBlocks() {
-      setLoading(true)
       try {
         const latest = await CChainService.getBlock(endpoints.cChain, "latest")
         if (!latest || cancelled) return
-        const blockNumbers = Array.from({ length: 5 }, (_, i) => latest.number - i)
-        const fetched = await Promise.all(
-          blockNumbers.map(n => CChainService.getBlock(endpoints.cChain, n))
+        const restBlockNumbers = Array.from({ length: 4 }, (_, i) => latest.number - (i + 1))
+        const restFetched = await Promise.all(
+          restBlockNumbers.map(n => CChainService.getBlock(endpoints.cChain, n))
         )
         if (!cancelled) {
+          const allBlocks = [latest, ...restFetched]
           setBlocks(
-            fetched
+            allBlocks
               .filter((b): b is NonNullable<typeof b> => b !== null)
               .map(b => ({
                 number: b.number,

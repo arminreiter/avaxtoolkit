@@ -89,10 +89,14 @@ export default function ValidatorDashboardPage() {
     setFetched(false)
     clearRaw()
     try {
-      const result = await AvalancheService.getValidatorByNodeId(
-        network.baseUrl,
-        nodeId.trim(),
-      )
+      const [validatorResult, peersResult, versionResult, subnetsResult] = await Promise.allSettled([
+        AvalancheService.getValidatorByNodeId(network.baseUrl, nodeId.trim()),
+        AvalancheService.getPeers(network.baseUrl),
+        AvalancheService.getNodeVersion(network.baseUrl),
+        AvalancheService.getSubnets(network.baseUrl),
+      ])
+
+      const result = validatorResult.status === "fulfilled" ? validatorResult.value : null
       if (!result) {
         setError("Validator not found for the given Node ID.")
         setFetched(true)
@@ -100,12 +104,6 @@ export default function ValidatorDashboardPage() {
         return
       }
       setValidator(result as Validator)
-
-      const [peersResult, versionResult, subnetsResult] = await Promise.allSettled([
-        AvalancheService.getPeers(network.baseUrl),
-        AvalancheService.getNodeVersion(network.baseUrl),
-        AvalancheService.getSubnets(network.baseUrl),
-      ])
 
       if (peersResult.status === "fulfilled") {
         setPeerInfo(peersResult.value)

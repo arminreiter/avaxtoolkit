@@ -160,10 +160,13 @@ export default function ValidatorStatusPage() {
     setFetched(false)
     clearRaw()
     try {
-      const result = await AvalancheService.getValidatorByNodeId(
-        network.baseUrl,
-        nodeId.trim(),
-      )
+      const [validatorResult, peersResult, healthResult] = await Promise.allSettled([
+        AvalancheService.getValidatorByNodeId(network.baseUrl, nodeId.trim()),
+        AvalancheService.getPeers(network.baseUrl),
+        AvalancheService.healthCheck(network.baseUrl),
+      ])
+
+      const result = validatorResult.status === "fulfilled" ? validatorResult.value : null
       if (!result) {
         setError("Validator not found for the given Node ID.")
         setFetched(true)
@@ -171,11 +174,6 @@ export default function ValidatorStatusPage() {
         return
       }
       setValidator(result as Validator)
-
-      const [peersResult, healthResult] = await Promise.allSettled([
-        AvalancheService.getPeers(network.baseUrl),
-        AvalancheService.healthCheck(network.baseUrl),
-      ])
 
       if (peersResult.status === "fulfilled") {
         setPeerInfo(peersResult.value)

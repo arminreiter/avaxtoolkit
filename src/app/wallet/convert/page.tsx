@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { getAddress } from "ethers"
+import { getAddress } from "ethers/address"
 import { ToolCard } from "@/components/tools/ToolCard"
 import { FormField } from "@/components/tools/FormField"
 import { LoadingButton } from "@/components/tools/LoadingButton"

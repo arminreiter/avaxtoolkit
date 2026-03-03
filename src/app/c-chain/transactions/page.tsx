@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { formatEther } from "ethers"
+import { formatEther } from "ethers/utils"
 import { useNetwork } from "@/lib/contexts/network-context"
 import { CChainService } from "@/lib/services/cchain.service"
 import { useRawJson } from "@/lib/hooks/use-raw-json"

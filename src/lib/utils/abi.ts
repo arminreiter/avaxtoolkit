@@ -1,4 +1,4 @@
-import { isAddress } from "ethers"
+import { isAddress } from "ethers/address"
 import type { ABIEntry, ABIParam } from "@/lib/services/verification"
 
 export function coerceArg(value: string, param: ABIParam): unknown {

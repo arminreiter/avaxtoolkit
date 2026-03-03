@@ -41,7 +41,7 @@ function findPositionsForAddress(validators: Validator[], address: string): Stak
   for (const v of validators) {
     const rewardAddrs: string[] = v.validationRewardOwner?.addresses ?? []
     const matchesValidator = rewardAddrs.some(
-      a => a.toLowerCase() === normalizedAddr
+      a => a === normalizedAddr
     )
 
     if (matchesValidator) {
@@ -61,7 +61,7 @@ function findPositionsForAddress(validators: Validator[], address: string): Stak
     for (const d of delegators) {
       const delRewardAddrs: string[] = d.rewardOwner?.addresses ?? []
       const matchesDelegator = delRewardAddrs.some(
-        a => a.toLowerCase() === normalizedAddr
+        a => a === normalizedAddr
       )
       if (matchesDelegator) {
         positions.push({
@@ -102,13 +102,17 @@ export default function StakingHistoryPage() {
     clearRaw()
     const normalizedAddress = normalizePChainAddress(address)
     try {
-      const stakeResult = await AvalancheService.getStake(network.baseUrl, [normalizedAddress])
-      setStakeData(stakeResult)
-
-      const [validatorsResult, utxosResult] = await Promise.allSettled([
+      const [stakeSettled, validatorsResult, utxosResult] = await Promise.allSettled([
+        AvalancheService.getStake(network.baseUrl, [normalizedAddress]),
         AvalancheService.getValidators(network.baseUrl),
         AvalancheService.getUTXOs(network.baseUrl, [normalizedAddress]),
       ])
+
+      if (stakeSettled.status === "fulfilled") {
+        setStakeData(stakeSettled.value)
+      } else {
+        throw stakeSettled.reason
+      }
 
       if (validatorsResult.status === "fulfilled") {
         const found = findPositionsForAddress(validatorsResult.value, normalizedAddress)

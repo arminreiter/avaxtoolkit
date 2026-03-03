@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { useNetwork } from "@/lib/contexts/network-context"
 import { AvalancheService } from "@/lib/services/avalanche.service"
 import { useRawJson } from "@/lib/hooks/use-raw-json"
@@ -10,7 +10,7 @@ import { LoadingButton } from "@/components/tools/LoadingButton"
 import { DataTable, Column } from "@/components/tools/DataTable"
 import { InfoTooltip } from "@/components/tools/InfoTooltip"
 import { CopyableId } from "@/components/tools/CopyableId"
-import { formatUnits } from "ethers"
+import { formatUnits } from "ethers/utils"
 import { nAvaxToAvax, formatTimestamp, truncateId } from "@/lib/utils"
 import type { Delegator, Validator } from "@/lib/models/avalanche"
 
@@ -55,18 +55,24 @@ export default function DelegatorsPage() {
   const { network } = useNetwork()
   const [nodeId, setNodeId] = useState("")
   const [delegators, setDelegators] = useState<DelegatorRow[]>([])
-  const [totalDelegated, setTotalDelegated] = useState(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const [fetched, setFetched] = useState(false)
   const { rawJson, clearRaw, captureRaw } = useRawJson()
+
+  const totalDelegated = useMemo(
+    () => delegators.reduce(
+      (sum, d) => sum + parseFloat(formatUnits(d.stakeAmount ?? d.weight ?? "0", 9)),
+      0
+    ),
+    [delegators]
+  )
 
   async function handleLookup() {
     if (!nodeId.trim()) return
     setLoading(true)
     setError("")
     setDelegators([])
-    setTotalDelegated(0)
     setFetched(false)
     clearRaw()
     try {
@@ -80,11 +86,6 @@ export default function DelegatorsPage() {
         const v = result as Validator
         const dels = (v.delegators ?? []) as DelegatorRow[]
         setDelegators(dels)
-        const total = dels.reduce(
-          (sum, d) => sum + parseFloat(formatUnits(d.stakeAmount ?? d.weight ?? "0", 9)),
-          0
-        )
-        setTotalDelegated(total)
       }
       captureRaw()
       setFetched(true)

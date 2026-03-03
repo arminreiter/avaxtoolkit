@@ -1,7 +1,8 @@
 "use client"
 
 import { useState } from "react"
-import { formatUnits, formatEther, parseEther, isAddress } from "ethers"
+import { formatUnits, formatEther, parseEther } from "ethers/utils"
+import { isAddress } from "ethers/address"
 import { ToolCard } from "@/components/tools/ToolCard"
 import { FormField } from "@/components/tools/FormField"
 import { LoadingButton } from "@/components/tools/LoadingButton"

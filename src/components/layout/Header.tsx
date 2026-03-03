@@ -58,7 +58,7 @@ export function Header() {
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <ShieldAlert className="h-3.5 w-3.5 text-yellow-500 cursor-help" />
+                      <ShieldAlert className="h-3.5 w-3.5 text-yellow-500 cursor-default" />
                     </TooltipTrigger>
                     <TooltipContent side="bottom" className="max-w-xs text-xs">
                       {connectionWarning}

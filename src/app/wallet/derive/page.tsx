@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useMemo } from "react"
-import { HDNodeWallet } from "ethers"
+import { HDNodeWallet } from "ethers/wallet"
 import { Eye, EyeOff } from "lucide-react"
 import { ToolCard } from "@/components/tools/ToolCard"
 import { FormField } from "@/components/tools/FormField"
