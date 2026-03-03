@@ -2,14 +2,15 @@
 
 import { useNetwork } from "@/lib/contexts/network-context"
 import { useWallet } from "@/lib/contexts/wallet-context"
-import { Moon, Sun, Wallet } from "lucide-react"
+import { Moon, Sun, Wallet, ShieldAlert } from "lucide-react"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { truncateId } from "@/lib/utils"
 import { useTheme } from "next-themes"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 export function Header() {
-  const { network, setNetwork, isConnected, allNetworks } = useNetwork()
+  const { network, setNetwork, isConnected, connectionWarning, allNetworks } = useNetwork()
   const { activeWallet, openWalletDialog } = useWallet()
   const { resolvedTheme, setTheme } = useTheme()
   return (
@@ -53,6 +54,18 @@ export function Header() {
               <span className="text-red-500 tracking-wider uppercase">
                 Offline
               </span>
+              {connectionWarning && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <ShieldAlert className="h-3.5 w-3.5 text-yellow-500 cursor-help" />
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" className="max-w-xs text-xs">
+                      {connectionWarning}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
             </>
           )}
         </div>

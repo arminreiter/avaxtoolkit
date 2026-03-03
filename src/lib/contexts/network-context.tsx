@@ -5,6 +5,43 @@ import { type Network, type ChainEndpoints, DEFAULT_NETWORKS, deriveEndpoints, i
 import { RpcService } from "@/lib/services/rpc.service"
 import { CChainService } from "@/lib/services/cchain.service"
 
+/** Check if a URL points to a private/local network address */
+function isPrivateUrl(url: string): boolean {
+  try {
+    const { hostname } = new URL(url)
+    return (
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname === "::1" ||
+      hostname.startsWith("192.168.") ||
+      hostname.startsWith("10.") ||
+      /^172\.(1[6-9]|2\d|3[01])\./.test(hostname)
+    )
+  } catch {
+    return false
+  }
+}
+
+/** Check if the current page is served from localhost */
+function isLocalOrigin(): boolean {
+  if (typeof window === "undefined") return true
+  const h = window.location.hostname
+  return h === "localhost" || h === "127.0.0.1" || h === "::1"
+}
+
+/** Detect browser/extension and return an appropriate warning */
+function detectConnectionWarning(): string {
+  if (typeof window !== "undefined") {
+    // Brave exposes navigator.brave
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const brave = (window.navigator as any).brave
+    if (brave && typeof brave.isBrave === "function") {
+      return "Brave Shields may be blocking requests to local networks. Disable Shields for this site or add an exception in brave://settings/shields."
+    }
+  }
+  return "Your browser or an extension (e.g. ad blocker) may be blocking requests to local networks. Try disabling your ad blocker for this site, or use a different browser."
+}
+
 const STORAGE_KEY_NETWORK = "avax-toolkit-network"
 const STORAGE_KEY_CUSTOM = "avax-toolkit-custom-networks"
 
@@ -13,6 +50,8 @@ interface NetworkContextValue {
   endpoints: ChainEndpoints
   setNetwork: (network: Network) => void
   isConnected: boolean
+  /** Warning message when a local/private endpoint is blocked (e.g. by an ad blocker) */
+  connectionWarning: string | null
   customNetworks: Network[]
   addCustomNetwork: (network: Network) => void
   removeCustomNetwork: (id: string) => void
@@ -24,6 +63,7 @@ const NetworkContext = createContext<NetworkContextValue | null>(null)
 export function NetworkProvider({ children }: { children: ReactNode }) {
   const [network, setNetworkState] = useState<Network>(DEFAULT_NETWORKS[0])
   const [isConnected, setIsConnected] = useState(false)
+  const [connectionWarning, setConnectionWarning] = useState<string | null>(null)
   const [customNetworks, setCustomNetworks] = useState<Network[]>([])
 
   /* eslint-disable react-hooks/set-state-in-effect -- SSR-safe: must use useEffect for localStorage to avoid hydration mismatch */
@@ -61,6 +101,7 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false
     setIsConnected(false)
+    setConnectionWarning(null)
 
     // Pre-configure ethers provider with staticNetwork to prevent
     // infinite _detectNetwork retry loops when the node is unreachable.
@@ -68,8 +109,20 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
     CChainService.getProvider(ep.cChain, network.chainId)
 
     RpcService.healthCheck(network.baseUrl, network.plainRpc)
-      .then(ok => { if (!cancelled) setIsConnected(ok) })
-      .catch(() => { if (!cancelled) setIsConnected(false) })
+      .then(ok => {
+        if (cancelled) return
+        setIsConnected(ok)
+        if (!ok && isPrivateUrl(network.baseUrl) && !isLocalOrigin()) {
+          setConnectionWarning(detectConnectionWarning())
+        }
+      })
+      .catch(() => {
+        if (cancelled) return
+        setIsConnected(false)
+        if (isPrivateUrl(network.baseUrl) && !isLocalOrigin()) {
+          setConnectionWarning(detectConnectionWarning())
+        }
+      })
 
     return () => { cancelled = true }
   }, [network.baseUrl, network.plainRpc, network.chainId])
@@ -100,9 +153,9 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
   const allNetworks = useMemo(() => [...DEFAULT_NETWORKS, ...customNetworks], [customNetworks])
 
   const value = useMemo(() => ({
-    network, endpoints, setNetwork, isConnected,
+    network, endpoints, setNetwork, isConnected, connectionWarning,
     customNetworks, addCustomNetwork, removeCustomNetwork, allNetworks,
-  }), [network, endpoints, setNetwork, isConnected, customNetworks, addCustomNetwork, removeCustomNetwork, allNetworks])
+  }), [network, endpoints, setNetwork, isConnected, connectionWarning, customNetworks, addCustomNetwork, removeCustomNetwork, allNetworks])
 
   return (
     <NetworkContext.Provider value={value}>
