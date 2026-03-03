@@ -1,0 +1,84 @@
+"use client"
+
+import { useNetwork } from "@/lib/contexts/network-context"
+import { useWallet } from "@/lib/contexts/wallet-context"
+import { Moon, Sun, Wallet } from "lucide-react"
+import { truncateId } from "@/lib/utils"
+import { useTheme } from "next-themes"
+import { Button } from "@/components/ui/button"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+
+export function Header() {
+  const { network, setNetwork, isConnected, allNetworks } = useNetwork()
+  const { activeWallet, openWalletDialog } = useWallet()
+  const { resolvedTheme, setTheme } = useTheme()
+  return (
+    <header className="flex items-center justify-between px-6 h-11 border-b border-border bg-card/80">
+      <div className="flex items-center gap-4 h-full">
+        {/* Network selector */}
+        <div className="flex items-center gap-2 h-full">
+          <span className="text-[10px] font-mono text-muted-foreground tracking-wider hidden sm:inline">
+            NET:
+          </span>
+          <Select value={network.id} onValueChange={(id) => {
+            const found = allNetworks.find(n => n.id === id)
+            if (found) setNetwork(found)
+          }}>
+            <SelectTrigger className="w-48 h-7 text-xs font-mono">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent position="popper" className="w-(--radix-select-trigger-width) font-mono">
+              {allNetworks.map(n => (
+                <SelectItem key={n.id} value={n.id}>{n.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Connection status */}
+        <div className="flex items-center gap-2 text-[11px] font-mono">
+          {isConnected ? (
+            <>
+              <span className="relative flex h-2 w-2">
+                <span className="pulse-dot absolute inline-flex h-full w-full bg-[#007700] dark:bg-[#00ff41]" />
+                <span className="relative inline-flex h-2 w-2 bg-[#007700] dark:bg-[#00ff41]" />
+              </span>
+              <span className="text-[#007700] dark:text-[#00ff41] tracking-wider uppercase">
+                Connected
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="h-2 w-2 bg-red-500" />
+              <span className="text-red-500 tracking-wider uppercase">
+                Offline
+              </span>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Right side */}
+      <div className="flex items-center gap-3 h-full">
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 text-xs font-mono gap-1.5"
+          onClick={openWalletDialog}
+        >
+          <Wallet className="h-3.5 w-3.5" />
+          {activeWallet ? truncateId(activeWallet.address, 6, 4) : "Connect"}
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7"
+          onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
+        >
+          <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
+          <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+        </Button>
+      </div>
+    </header>
+  )
+}
