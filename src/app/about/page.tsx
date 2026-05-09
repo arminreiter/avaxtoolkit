@@ -1,7 +1,8 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Terminal, ShieldCheck, Github, Cpu, Lock, Braces } from "lucide-react"
+import { Terminal, ShieldCheck, Cpu, Lock, Braces } from "lucide-react"
+import { GithubIcon } from "@/components/icons/GithubIcon"
 
 const HEX_NOISE = "4156 4158 544f 4f4c 4b49 54 2f2f 6c6f 63 616c 686f 7374 3a39 3635 30"
 
@@ -356,7 +357,7 @@ export default function AboutPage() {
         <TerminalBlock
           id="0x06"
           path="~/source"
-          icon={Github}
+          icon={GithubIcon}
           iconColor="bg-foreground/10 text-foreground"
           delay={600}
         >
@@ -372,7 +373,7 @@ export default function AboutPage() {
             rel="noopener noreferrer"
             className="group/link inline-flex items-center gap-2 about-code-block text-sm font-mono hover:border-primary/30 transition-colors"
           >
-            <Github className="h-4 w-4 text-muted-foreground group-hover/link:text-primary transition-colors" />
+            <GithubIcon className="h-4 w-4 text-muted-foreground group-hover/link:text-primary transition-colors" />
             <span className="text-foreground/80 group-hover/link:text-primary transition-colors">
               github.com/arminreiter/avaxtoolkit
             </span>

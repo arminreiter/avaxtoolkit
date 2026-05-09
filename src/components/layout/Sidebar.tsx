@@ -1,8 +1,9 @@
 "use client"
 
-import { Github, Menu } from "lucide-react"
+import { Menu } from "lucide-react"
 import Image from "next/image"
 import logoIcon from "@/app/icon.svg"
+import { GithubIcon } from "@/components/icons/GithubIcon"
 import { navigation } from "@/lib/navigation"
 import { NavItem } from "./NavItem"
 import { Button } from "@/components/ui/button"
@@ -50,7 +51,7 @@ function SidebarContent() {
           rel="noopener noreferrer"
           className="text-muted-foreground/50 hover:text-muted-foreground transition-colors"
         >
-          <Github className="h-4 w-4" />
+          <GithubIcon className="h-4 w-4" />
         </a>
         <span className="text-muted-foreground/30 text-[10px]">|</span>
         <a
