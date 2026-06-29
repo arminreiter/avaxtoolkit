@@ -11,11 +11,7 @@ import { SectionHeading } from "@/components/tools/SectionHeading"
 import { InfoCard } from "@/components/tools/InfoCard"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-
-interface HealthResult {
-  healthy: boolean
-  checks: Record<string, unknown>
-}
+import type { HealthResult } from "@/lib/models/avalanche"
 
 export default function NodeHealthPage() {
   const { network } = useNetwork()

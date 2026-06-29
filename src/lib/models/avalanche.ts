@@ -117,3 +117,42 @@ export interface Blockchain {
   /** Virtual machine identifier running this blockchain. */
   vmID: string
 }
+
+// ---------------------------------------------------------------------------
+// Info API (info.*)
+// ---------------------------------------------------------------------------
+
+/** A single peer entry returned by `info.peers`. */
+export interface Peer {
+  ip: string
+  publicIP: string
+  nodeID: string
+  version: string
+  lastSent: string
+  lastReceived: string
+}
+
+/** Response shape for `info.peers`. */
+export interface PeerInfo {
+  /** Number of connected peers (string, per the wire format). */
+  numPeers: string
+  peers: Peer[]
+}
+
+/** Response shape for `info.getNodeVersion`. */
+export interface NodeVersionInfo {
+  version: string
+  databaseVersion: string
+  gitCommit: string
+  vmVersions: Record<string, string>
+}
+
+// ---------------------------------------------------------------------------
+// Health API (health.*)
+// ---------------------------------------------------------------------------
+
+/** Response shape for `health.health` and `health.readiness`. */
+export interface HealthResult {
+  healthy: boolean
+  checks: Record<string, unknown>
+}

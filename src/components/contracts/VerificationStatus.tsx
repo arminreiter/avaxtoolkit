@@ -5,8 +5,7 @@ import { CheckCircle2, XCircle, ExternalLink, Loader2, ArrowRight, Upload, Minus
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import type { AggregatedVerification } from "@/lib/services/verification"
-import { VerificationService } from "@/lib/services/verification"
+import { VerificationService, type AggregatedVerification } from "@/lib/services/verification"
 
 const PROVIDER_NAMES: Record<string, string> = {
   routescan: "Snowtrace (Routescan)",

@@ -384,19 +384,6 @@
 }
 
 /* ═══════════════════════════════════════════
-   TERMINAL BOOT SEQUENCE
-   ═══════════════════════════════════════════ */
-@keyframes type-in {
-  from { width: 0; }
-  to { width: 100%; }
-}
-.terminal-type {
-  overflow: hidden;
-  white-space: nowrap;
-  animation: type-in 0.8s steps(30) both;
-}
-
-/* ═══════════════════════════════════════════
    SHIMMER LOADING (terminal style)
    ═══════════════════════════════════════════ */
 @keyframes shimmer {

@@ -11,19 +11,14 @@ import { InfoTooltip } from "@/components/tools/InfoTooltip"
 import { DetailGrid } from "@/components/tools/DetailGrid"
 import { CopyableId } from "@/components/tools/CopyableId"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-
-interface L1Info {
-  id: string
-  controlKeys: string[]
-  threshold: number
-}
+import type { Subnet } from "@/lib/models/avalanche"
 
 export default function L1InfoPage() {
   const { network } = useNetwork()
   const [l1Id, setL1Id] = useState("")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
-  const [l1, setL1] = useState<L1Info | null>(null)
+  const [l1, setL1] = useState<Subnet | null>(null)
   const [validatorCount, setValidatorCount] = useState<number | null>(null)
   const { rawJson, clearRaw, captureRaw } = useRawJson()
 
@@ -43,8 +38,8 @@ export default function L1InfoPage() {
         setError("L1 not found")
         return
       }
-      setL1(results[0] as L1Info)
-      setValidatorCount((validators as unknown[]).length)
+      setL1(results[0])
+      setValidatorCount(validators.length)
       captureRaw()
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to fetch L1 info")

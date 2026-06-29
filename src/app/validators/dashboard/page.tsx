@@ -16,19 +16,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { TimeProgress } from "@/components/tools/TimeProgress"
 import { AlertTriangle } from "lucide-react"
-import type { Validator, Delegator } from "@/lib/models/avalanche"
-
-interface PeerInfo {
-  numPeers: string
-  peers: { ip: string; publicIP: string; nodeID: string; version: string; lastSent: string; lastReceived: string }[]
-}
-
-interface NodeVersionInfo {
-  version: string
-  databaseVersion: string
-  gitCommit: string
-  vmVersions: Record<string, string>
-}
+import type { Validator, Delegator, PeerInfo, NodeVersionInfo } from "@/lib/models/avalanche"
 
 // Hoisted outside component to avoid re-creation on each render (rendering-hoist-jsx)
 const delegatorColumns = [
@@ -68,7 +56,7 @@ const delegatorColumns = [
 
 export default function ValidatorDashboardPage() {
   const { network } = useNetwork()
-  const [nodeId, setNodeId] = useState("")
+  const [nodeID, setNodeID] = useState("")
   const [validator, setValidator] = useState<Validator | null>(null)
   const [peerInfo, setPeerInfo] = useState<PeerInfo | null>(null)
   const [versionInfo, setVersionInfo] = useState<NodeVersionInfo | null>(null)
@@ -79,7 +67,7 @@ export default function ValidatorDashboardPage() {
   const { rawJson, clearRaw, captureRaw } = useRawJson()
 
   async function handleLookup() {
-    if (!nodeId.trim()) return
+    if (!nodeID.trim()) return
     setLoading(true)
     setError("")
     setValidator(null)
@@ -90,7 +78,7 @@ export default function ValidatorDashboardPage() {
     clearRaw()
     try {
       const [validatorResult, peersResult, versionResult, subnetsResult] = await Promise.allSettled([
-        AvalancheService.getValidatorByNodeId(network.baseUrl, nodeId.trim()),
+        AvalancheService.getValidatorByNodeID(network.baseUrl, nodeID.trim()),
         AvalancheService.getPeers(network.baseUrl),
         AvalancheService.getNodeVersion(network.baseUrl),
         AvalancheService.getSubnets(network.baseUrl),
@@ -118,7 +106,7 @@ export default function ValidatorDashboardPage() {
         const subnetChecks = await Promise.allSettled(
           subnets.map(async (subnet) => {
             const subnetVals = await AvalancheService.getSubnetValidators(network.baseUrl, subnet.id)
-            const found = subnetVals.some(v => v.nodeID === nodeId.trim())
+            const found = subnetVals.some(v => v.nodeID === nodeID.trim())
             return found ? subnet.id : null
           })
         )
@@ -155,8 +143,8 @@ export default function ValidatorDashboardPage() {
           <FormField
             label="Node ID"
             id="node-id"
-            value={nodeId}
-            onChange={setNodeId}
+            value={nodeID}
+            onChange={setNodeID}
             placeholder="NodeID-..."
             monospace
           />

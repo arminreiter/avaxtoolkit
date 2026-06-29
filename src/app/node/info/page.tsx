@@ -64,7 +64,7 @@ export default function NodeInfoPage() {
         upgradesResult,
         acpsResult,
       ] = await Promise.allSettled([
-        AvalancheService.getNodeId(network.baseUrl),
+        AvalancheService.getNodeID(network.baseUrl),
         AvalancheService.getNodeIP(network.baseUrl),
         AvalancheService.getNetworkID(network.baseUrl),
         AvalancheService.getNetworkName(network.baseUrl),

@@ -62,7 +62,7 @@ export default function L1ValidatorsPage() {
   const [validators, setValidators] = useState<ValidatorRow[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
-  const [hasSearched, setHasSearched] = useState(false)
+  const [fetched, setFetched] = useState(false)
   const { rawJson, clearRaw, captureRaw } = useRawJson()
 
   async function handleLookup() {
@@ -70,7 +70,7 @@ export default function L1ValidatorsPage() {
     setLoading(true)
     setError("")
     setValidators([])
-    setHasSearched(true)
+    setFetched(true)
     clearRaw()
     try {
       const result = await AvalancheService.getSubnetValidators(
@@ -109,7 +109,7 @@ export default function L1ValidatorsPage() {
 
         {loading && <TableSkeleton rows={4} />}
 
-        {!loading && !error && hasSearched && (
+        {!loading && !error && fetched && (
           <>
             <div className="flex items-center gap-1.5">
               <p className="text-sm text-muted-foreground">

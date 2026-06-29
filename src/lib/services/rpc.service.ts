@@ -1,3 +1,5 @@
+import { deriveEndpoints } from "@/lib/models/network"
+
 let requestId = 1
 
 export class RpcService {
@@ -40,8 +42,7 @@ export class RpcService {
 
   static async healthCheck(baseUrl: string, plainRpc?: boolean): Promise<boolean> {
     try {
-      const base = baseUrl.replace(/\/+$/, "")
-      const url = plainRpc ? base : `${base}/ext/bc/C/rpc`
+      const url = deriveEndpoints(baseUrl, plainRpc).cChain
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), 10000)
       const response = await fetch(url, {

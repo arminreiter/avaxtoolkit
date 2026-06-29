@@ -10,7 +10,7 @@ import { DetailGrid } from "@/components/tools/DetailGrid"
 import { CopyableId } from "@/components/tools/CopyableId"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { relativeTime, formatGas, gasPercent, gasColor } from "@/lib/utils"
+import { relativeTime, formatGas, gasPercent, gasColor, truncateId } from "@/lib/utils"
 import { decodeMethodName } from "@/lib/method-signatures"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -50,8 +50,7 @@ interface TxDetail {
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
 function truncateHash(hash: string, chars = 8): string {
-  if (hash.length <= chars * 2 + 2) return hash
-  return `${hash.slice(0, chars + 2)}\u2026${hash.slice(-chars)}`
+  return truncateId(hash, chars + 2, chars)
 }
 
 // ─── TransactionDetail ───────────────────────────────────────────────────────
@@ -756,7 +755,7 @@ export default function ExplorerPage() {
         if (!tx) return
 
         const effectiveGasPrice = receipt
-          ? (receipt as unknown as { effectiveGasPrice?: bigint }).effectiveGasPrice?.toString() ?? tx.gasPrice?.toString() ?? "0"
+          ? receipt.gasPrice.toString()
           : tx.gasPrice?.toString() ?? "0"
         const gasUsed = receipt?.gasUsed?.toString() ?? "0"
         const txFee = formatEther(BigInt(gasUsed) * BigInt(effectiveGasPrice))

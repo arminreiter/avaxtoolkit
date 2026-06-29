@@ -1,6 +1,7 @@
 "use client"
 
 import { Check, Copy } from "lucide-react"
+import { cn } from "@/lib/utils"
 import { useCopyToClipboard } from "@/lib/hooks/use-copy-to-clipboard"
 
 interface CopyableIdProps {
@@ -13,7 +14,7 @@ export function CopyableId({ value, display, className = "" }: CopyableIdProps) 
   const { copied, copy } = useCopyToClipboard()
 
   return (
-    <span className={`inline-flex items-center gap-1 group ${className}`}>
+    <span className={cn("inline-flex items-center gap-1 group", className)}>
       <span className="break-all">{display ?? value}</span>
       <button
         type="button"

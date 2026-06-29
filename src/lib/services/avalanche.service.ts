@@ -1,20 +1,21 @@
 import { RpcService } from "./rpc.service"
-import type { Validator, Subnet, Blockchain } from "@/lib/models/avalanche"
+import { deriveEndpoints } from "@/lib/models/network"
+import type { Validator, Subnet, Blockchain, PeerInfo, NodeVersionInfo, HealthResult } from "@/lib/models/avalanche"
 
 function pChainUrl(baseUrl: string) {
-  return `${baseUrl.replace(/\/+$/, "")}/ext/bc/P`
+  return deriveEndpoints(baseUrl).pChain
 }
 
 function xChainUrl(baseUrl: string) {
-  return `${baseUrl.replace(/\/+$/, "")}/ext/bc/X`
+  return deriveEndpoints(baseUrl).xChain
 }
 
 function infoUrl(baseUrl: string) {
-  return `${baseUrl.replace(/\/+$/, "")}/ext/info`
+  return deriveEndpoints(baseUrl).info
 }
 
 function healthUrl(baseUrl: string) {
-  return `${baseUrl.replace(/\/+$/, "")}/ext/health`
+  return deriveEndpoints(baseUrl).health
 }
 
 export class AvalancheService {
@@ -31,11 +32,11 @@ export class AvalancheService {
     return result.validators
   }
 
-  static async getValidatorByNodeId(baseUrl: string, nodeId: string): Promise<Validator | null> {
+  static async getValidatorByNodeID(baseUrl: string, nodeID: string): Promise<Validator | null> {
     const result = await RpcService.call<{ validators: Validator[] }>(
       pChainUrl(baseUrl),
       "platform.getCurrentValidators",
-      { nodeIDs: [nodeId] },
+      { nodeIDs: [nodeID] },
     )
     return result.validators[0] ?? null
   }
@@ -172,8 +173,11 @@ export class AvalancheService {
     }>(infoUrl(baseUrl), "info.uptime", params)
   }
 
-  static async getNodeId(baseUrl: string) {
-    return RpcService.call<{ nodeID: string; nodePOP: unknown }>(
+  static async getNodeID(baseUrl: string) {
+    return RpcService.call<{
+      nodeID: string
+      nodePOP: { publicKey: string; proofOfPossession: string }
+    }>(
       infoUrl(baseUrl),
       "info.getNodeID",
       {},
@@ -181,19 +185,11 @@ export class AvalancheService {
   }
 
   static async getPeers(baseUrl: string) {
-    return RpcService.call<{
-      numPeers: string
-      peers: { ip: string; publicIP: string; nodeID: string; version: string; lastSent: string; lastReceived: string }[]
-    }>(infoUrl(baseUrl), "info.peers", {})
+    return RpcService.call<PeerInfo>(infoUrl(baseUrl), "info.peers", {})
   }
 
   static async getNodeVersion(baseUrl: string) {
-    return RpcService.call<{
-      version: string
-      databaseVersion: string
-      gitCommit: string
-      vmVersions: Record<string, string>
-    }>(infoUrl(baseUrl), "info.getNodeVersion", {})
+    return RpcService.call<NodeVersionInfo>(infoUrl(baseUrl), "info.getNodeVersion", {})
   }
 
   static async isBootstrapped(baseUrl: string, chain: string) {
@@ -257,19 +253,13 @@ export class AvalancheService {
   static async healthCheck(baseUrl: string, tags?: string[]) {
     const params: Record<string, unknown> = {}
     if (tags && tags.length > 0) params.tags = tags
-    return RpcService.call<{
-      healthy: boolean
-      checks: Record<string, unknown>
-    }>(healthUrl(baseUrl), "health.health", params)
+    return RpcService.call<HealthResult>(healthUrl(baseUrl), "health.health", params)
   }
 
   static async healthReadiness(baseUrl: string, tags?: string[]) {
     const params: Record<string, unknown> = {}
     if (tags && tags.length > 0) params.tags = tags
-    return RpcService.call<{
-      healthy: boolean
-      checks: Record<string, unknown>
-    }>(healthUrl(baseUrl), "health.readiness", params)
+    return RpcService.call<HealthResult>(healthUrl(baseUrl), "health.readiness", params)
   }
 
   static async healthLiveness(baseUrl: string) {

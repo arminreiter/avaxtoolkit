@@ -2,16 +2,16 @@
 
 import { useState, useCallback } from "react"
 import dynamic from "next/dynamic"
+import { isAddress } from "ethers/address"
 import { useNetwork } from "@/lib/contexts/network-context"
-import { VerificationService } from "@/lib/services/verification"
-import type { AggregatedVerification } from "@/lib/services/verification"
+import { VerificationService, type AggregatedVerification } from "@/lib/services/verification"
 import { ToolCard } from "@/components/tools/ToolCard"
 import { FormField } from "@/components/tools/FormField"
 import { LoadingButton } from "@/components/tools/LoadingButton"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
+import { AlertTriangle } from "lucide-react"
 const VerificationStatus = dynamic(() => import("@/components/contracts/VerificationStatus").then(m => ({ default: m.VerificationStatus })))
 const VerificationInstructions = dynamic(() => import("@/components/contracts/VerificationInstructions").then(m => ({ default: m.VerificationInstructions })))
-import { AlertTriangle } from "lucide-react"
 
 const SourceViewer = dynamic(() => import("@/components/contracts/SourceViewer").then(m => ({ default: m.SourceViewer })), { ssr: false })
 const ContractRead = dynamic(() => import("@/components/contracts/ContractRead").then(m => ({ default: m.ContractRead })), { ssr: false })
@@ -31,7 +31,7 @@ export default function ContractVerificationPage() {
     try {
       const addr = address.trim()
       if (!addr) throw new Error("Please enter a contract address")
-      if (!/^0x[a-fA-F0-9]{40}$/.test(addr)) throw new Error("Invalid address format")
+      if (!isAddress(addr)) throw new Error("Invalid address format")
       const result = await VerificationService.checkAll(addr, network.chainId, endpoints.cChain)
       setData(result)
     } catch (err) {

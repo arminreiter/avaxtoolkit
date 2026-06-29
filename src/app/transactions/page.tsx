@@ -6,6 +6,7 @@ import { Send, GitFork, ArrowDownToLine, Wallet, Coins, Copy, Check } from "luci
 import { useWallet } from "@/lib/contexts/wallet-context"
 import { useNetwork } from "@/lib/contexts/network-context"
 import { CChainService } from "@/lib/services/cchain.service"
+import { useCopyToClipboard } from "@/lib/hooks/use-copy-to-clipboard"
 import { ToolCard } from "@/components/tools/ToolCard"
 import { StatCard } from "@/components/dashboard/StatCard"
 import { Card, CardContent } from "@/components/ui/card"
@@ -22,7 +23,7 @@ export default function WalletDashboardPage() {
   const { network, endpoints } = useNetwork()
   const [balance, setBalance] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const [copied, setCopied] = useState(false)
+  const { copied, copy } = useCopyToClipboard()
 
   useEffect(() => {
     let cancelled = false
@@ -44,9 +45,7 @@ export default function WalletDashboardPage() {
 
   const copyAddress = () => {
     if (!activeWallet?.address) return
-    navigator.clipboard.writeText(activeWallet.address)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+    copy(activeWallet.address)
   }
 
   return (

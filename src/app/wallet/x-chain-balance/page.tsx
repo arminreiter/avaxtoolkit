@@ -24,7 +24,7 @@ export default function XChainBalancePage() {
   const [balances, setBalances] = useState<Balance[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
-  const [hasSearched, setHasSearched] = useState(false)
+  const [fetched, setFetched] = useState(false)
   const { rawJson, clearRaw, captureRaw } = useRawJson()
 
   async function handleLookup() {
@@ -32,7 +32,7 @@ export default function XChainBalancePage() {
     setLoading(true)
     setError("")
     setBalances([])
-    setHasSearched(true)
+    setFetched(true)
     clearRaw()
     try {
       const result = await AvalancheService.getXChainBalances(
@@ -90,7 +90,7 @@ export default function XChainBalancePage() {
 
         {loading && <TableSkeleton rows={3} />}
 
-        {!loading && !error && hasSearched && (
+        {!loading && !error && fetched && (
           <>
             <div className="flex items-center gap-1.5">
               <p className="text-sm text-muted-foreground">

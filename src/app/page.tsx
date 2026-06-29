@@ -61,7 +61,7 @@ function DashboardContent() {
     fetchStat("supply", async () => {
       const result = await AvalancheService.getCurrentSupply(network.baseUrl)
       if (!cancelled) setStakingData(prev => ({ ...prev, supply: result.supply }))
-      return `${(Number(result.supply) / 1e9).toLocaleString(undefined, { maximumFractionDigits: 0 })} AVAX`
+      return `${nAvaxToAvax(result.supply, 0)} AVAX`
     })
 
     fetchStat("gasPrice", async () => {

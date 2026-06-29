@@ -1,5 +1,6 @@
 import { SourcifyProvider } from "./sourcify.provider"
 import type { VerificationResult, ContractSource, ABIEntry, CrossVerifyResult } from "../types"
+import { fetchWithTimeout } from "../http"
 
 /**
  * Avalanche Explorer uses sourcify.avax.network which only supports Sourcify v1 API,
@@ -21,14 +22,7 @@ export class AvalancheExplorerProvider extends SourcifyProvider {
   // sourcify.avax.network only supports Sourcify v1 API
   override async checkVerification(address: string, chainId: number): Promise<VerificationResult> {
     const url = `${this.baseUrl}/check-all-by-addresses?addresses=${address}&chainIds=${chainId}`
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 15000)
-    let response: Response
-    try {
-      response = await fetch(url, { signal: controller.signal })
-    } finally {
-      clearTimeout(timeoutId)
-    }
+    const response = await fetchWithTimeout(url)
     if (!response.ok) {
       throw new Error(`${this.name} API error: ${response.status}`)
     }
@@ -45,14 +39,7 @@ export class AvalancheExplorerProvider extends SourcifyProvider {
   // sourcify.avax.network only supports Sourcify v1 API
   override async getSource(address: string, chainId: number): Promise<ContractSource> {
     const url = `${this.baseUrl}/files/any/${chainId}/${address}`
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 15000)
-    let response: Response
-    try {
-      response = await fetch(url, { signal: controller.signal })
-    } finally {
-      clearTimeout(timeoutId)
-    }
+    const response = await fetchWithTimeout(url)
     if (!response.ok) {
       throw new Error(`${this.name} API error: ${response.status}`)
     }
@@ -127,27 +114,19 @@ export class AvalancheExplorerProvider extends SourcifyProvider {
     // Resolve chain-specific RPC URL and name required by the API
     const { rpcUrl, name } = this.getChainInfo(chainId)
 
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 30000)
-    let response: Response
-    try {
-      response = await fetch(`${this.baseUrl}/verify`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          address,
-          chain: String(chainId),
-          files,
-          rpcUrl,
-          name,
-          creatorTxHash: "",
-          chosenContract: "0",
-        }),
-        signal: controller.signal,
-      })
-    } finally {
-      clearTimeout(timeoutId)
-    }
+    const response = await fetchWithTimeout(`${this.baseUrl}/verify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        address,
+        chain: String(chainId),
+        files,
+        rpcUrl,
+        name,
+        creatorTxHash: "",
+        chosenContract: "0",
+      }),
+    }, 30000)
 
     if (response.ok) {
       const json = await response.json()

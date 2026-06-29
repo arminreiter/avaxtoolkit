@@ -33,8 +33,7 @@ function isLocalOrigin(): boolean {
 function detectConnectionWarning(): string {
   if (typeof window !== "undefined") {
     // Brave exposes navigator.brave
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const brave = (window.navigator as any).brave
+    const brave = (window.navigator as Navigator & { brave?: { isBrave: () => Promise<boolean> } }).brave
     if (brave && typeof brave.isBrave === "function") {
       return "Brave Shields may be blocking requests to local networks. Disable Shields for this site or add an exception in brave://settings/shields."
     }
@@ -116,18 +115,13 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
     const ep = deriveEndpoints(network.baseUrl, network.plainRpc)
     CChainService.getProvider(ep.cChain, network.chainId)
 
+    // healthCheck never rejects (it resolves false on any error), so the
+    // ok === false branch below covers connection failures — no .catch needed.
     RpcService.healthCheck(network.baseUrl, network.plainRpc)
       .then(ok => {
         if (cancelled) return
         setIsConnected(ok)
         if (!ok && isPrivateUrl(network.baseUrl) && !isLocalOrigin()) {
-          setConnectionWarning(detectConnectionWarning())
-        }
-      })
-      .catch(() => {
-        if (cancelled) return
-        setIsConnected(false)
-        if (isPrivateUrl(network.baseUrl) && !isLocalOrigin()) {
           setConnectionWarning(detectConnectionWarning())
         }
       })

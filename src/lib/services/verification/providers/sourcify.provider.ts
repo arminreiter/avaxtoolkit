@@ -1,5 +1,6 @@
 import type { VerificationProvider, VerificationResult, ContractSource, ABIEntry, CrossVerifyResult } from "../types"
 import { buildStdJsonInput, resolveQualifiedName } from "./etherscan.provider"
+import { fetchWithTimeout } from "../http"
 
 export class SourcifyProvider implements VerificationProvider {
   id: string
@@ -19,14 +20,7 @@ export class SourcifyProvider implements VerificationProvider {
 
   async checkVerification(address: string, chainId: number): Promise<VerificationResult> {
     const url = `${this.baseUrl}/v2/contract/${chainId}/${address}`
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 15000)
-    let response: Response
-    try {
-      response = await fetch(url, { signal: controller.signal })
-    } finally {
-      clearTimeout(timeoutId)
-    }
+    const response = await fetchWithTimeout(url)
     if (response.status === 404) {
       return { provider: this.id, verified: false }
     }
@@ -46,14 +40,7 @@ export class SourcifyProvider implements VerificationProvider {
 
   async getSource(address: string, chainId: number): Promise<ContractSource> {
     const url = `${this.baseUrl}/v2/contract/${chainId}/${address}?fields=abi,sources,compilation,stdJsonInput,metadata`
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 15000)
-    let response: Response
-    try {
-      response = await fetch(url, { signal: controller.signal })
-    } finally {
-      clearTimeout(timeoutId)
-    }
+    const response = await fetchWithTimeout(url)
     if (!response.ok) {
       throw new Error(`${this.name} API error: ${response.status}`)
     }

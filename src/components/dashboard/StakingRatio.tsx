@@ -3,13 +3,10 @@
 import { useEffect, useState } from "react"
 import { useNetwork } from "@/lib/contexts/network-context"
 import { AvalancheService } from "@/lib/services/avalanche.service"
+import { nAvaxToAvax } from "@/lib/utils"
 import { Card, CardContent } from "@/components/ui/card"
 import { InfoTooltip } from "@/components/tools/InfoTooltip"
 import { Weight } from "lucide-react"
-
-function formatAvax(nAvax: string): string {
-  return (Number(nAvax) / 1e9).toLocaleString(undefined, { maximumFractionDigits: 0 })
-}
 
 function asciiBar(pct: number, width: number = 20): string {
   const filled = Math.round((pct / 100) * width)
@@ -83,8 +80,8 @@ export function StakingRatio({ staked: propStaked, supply: propSupply }: Staking
                 </div>
 
                 <div className="flex justify-between text-[11px] text-muted-foreground font-mono">
-                  <span>staked: {formatAvax(staked!)} AVAX</span>
-                  <span>supply: {formatAvax(supply!)} AVAX</span>
+                  <span>staked: {nAvaxToAvax(staked!, 0)} AVAX</span>
+                  <span>supply: {nAvaxToAvax(supply!, 0)} AVAX</span>
                 </div>
               </>
             )}

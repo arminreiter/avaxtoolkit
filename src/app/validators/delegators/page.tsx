@@ -53,7 +53,7 @@ const columns: Column<DelegatorRow>[] = [
 
 export default function DelegatorsPage() {
   const { network } = useNetwork()
-  const [nodeId, setNodeId] = useState("")
+  const [nodeID, setNodeID] = useState("")
   const [delegators, setDelegators] = useState<DelegatorRow[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
@@ -69,16 +69,16 @@ export default function DelegatorsPage() {
   )
 
   async function handleLookup() {
-    if (!nodeId.trim()) return
+    if (!nodeID.trim()) return
     setLoading(true)
     setError("")
     setDelegators([])
     setFetched(false)
     clearRaw()
     try {
-      const result = await AvalancheService.getValidatorByNodeId(
+      const result = await AvalancheService.getValidatorByNodeID(
         network.baseUrl,
-        nodeId.trim()
+        nodeID.trim()
       )
       if (!result) {
         setError("Validator not found for the given Node ID.")
@@ -108,8 +108,8 @@ export default function DelegatorsPage() {
           <FormField
             label="Node ID"
             id="node-id"
-            value={nodeId}
-            onChange={setNodeId}
+            value={nodeID}
+            onChange={setNodeID}
             placeholder="NodeID-..."
             monospace
           />

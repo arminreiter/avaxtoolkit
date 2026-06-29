@@ -1,4 +1,5 @@
 import type { VerificationProvider, VerificationResult, ContractSource, ABIEntry, CrossVerifyResult } from "../types"
+import { fetchWithTimeout } from "../http"
 
 const MAX_POLL_ATTEMPTS = 20
 const POLL_INTERVAL_MS = 3000
@@ -14,16 +15,12 @@ export abstract class EtherscanProvider implements VerificationProvider {
     const base = this.getBaseUrl(chainId)
     const sep = base.includes("?") ? "&" : "?"
     const url = `${base}${sep}module=contract&action=getsourcecode&address=${address}`
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 15000)
-    let response: Response
-    try {
-      response = await fetch(url, { signal: controller.signal })
-    } finally {
-      clearTimeout(timeoutId)
-    }
+    const response = await fetchWithTimeout(url)
+    // Throw on transport/HTTP errors so the aggregator marks this provider
+    // "unavailable" (matching Sourcify/AvalancheExplorer + getSource below). A
+    // definitive "not verified" answer is HTTP 200 with status != "1" (handled below).
     if (!response.ok) {
-      return { provider: this.id, verified: false }
+      throw new Error(`${this.name} API error: ${response.status}`)
     }
     const json = await response.json()
     if (json.status !== "1" || !json.result?.[0]?.SourceCode) {
@@ -48,14 +45,7 @@ export abstract class EtherscanProvider implements VerificationProvider {
     const base = this.getBaseUrl(chainId)
     const sep = base.includes("?") ? "&" : "?"
     const url = `${base}${sep}module=contract&action=getsourcecode&address=${address}`
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 15000)
-    let response: Response
-    try {
-      response = await fetch(url, { signal: controller.signal })
-    } finally {
-      clearTimeout(timeoutId)
-    }
+    const response = await fetchWithTimeout(url)
     if (!response.ok) throw new Error(`${this.name} API error: ${response.status}`)
     const json = await response.json()
     if (json.status !== "1" || !json.result?.[0]) {
@@ -120,19 +110,11 @@ export abstract class EtherscanProvider implements VerificationProvider {
       params.set("constructorArguements", source.constructorArgs)
     }
 
-    const submitController = new AbortController()
-    const submitTimeoutId = setTimeout(() => submitController.abort(), 30000)
-    let response: Response
-    try {
-      response = await fetch(base, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: params.toString(),
-        signal: submitController.signal,
-      })
-    } finally {
-      clearTimeout(submitTimeoutId)
-    }
+    const response = await fetchWithTimeout(base, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: params.toString(),
+    }, 30000)
 
     if (!response.ok) {
       return { success: false, message: `${this.name} API error: ${response.status}` }

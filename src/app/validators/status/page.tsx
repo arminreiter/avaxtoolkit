@@ -15,24 +15,7 @@ import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/
 import { AlertTriangle, CircleCheck, XCircle, Info, CheckCircle2 } from "lucide-react"
 
 import { TimeProgress } from "@/components/tools/TimeProgress"
-
-interface Validator {
-  nodeID: string
-  uptime?: string
-  connected: boolean
-  startTime?: string
-  endTime?: string
-}
-
-interface PeerInfo {
-  numPeers: string
-  peers: unknown[]
-}
-
-interface HealthResult {
-  healthy: boolean
-  checks: Record<string, unknown>
-}
+import type { Validator, PeerInfo, HealthResult } from "@/lib/models/avalanche"
 
 interface Finding {
   severity: "ok" | "warning" | "critical" | "info"
@@ -141,7 +124,7 @@ const recommendations = [
 
 export default function ValidatorStatusPage() {
   const { network } = useNetwork()
-  const [nodeId, setNodeId] = useState("")
+  const [nodeID, setNodeID] = useState("")
   const [validator, setValidator] = useState<Validator | null>(null)
   const [peerInfo, setPeerInfo] = useState<PeerInfo | null>(null)
   const [health, setHealth] = useState<HealthResult | null>(null)
@@ -151,7 +134,7 @@ export default function ValidatorStatusPage() {
   const { rawJson, clearRaw, captureRaw } = useRawJson()
 
   const handleLookup = useCallback(async () => {
-    if (!nodeId.trim()) return
+    if (!nodeID.trim()) return
     setLoading(true)
     setError("")
     setValidator(null)
@@ -161,7 +144,7 @@ export default function ValidatorStatusPage() {
     clearRaw()
     try {
       const [validatorResult, peersResult, healthResult] = await Promise.allSettled([
-        AvalancheService.getValidatorByNodeId(network.baseUrl, nodeId.trim()),
+        AvalancheService.getValidatorByNodeID(network.baseUrl, nodeID.trim()),
         AvalancheService.getPeers(network.baseUrl),
         AvalancheService.healthCheck(network.baseUrl),
       ])
@@ -173,7 +156,7 @@ export default function ValidatorStatusPage() {
         setLoading(false)
         return
       }
-      setValidator(result as Validator)
+      setValidator(result)
 
       if (peersResult.status === "fulfilled") {
         setPeerInfo(peersResult.value)
@@ -190,7 +173,7 @@ export default function ValidatorStatusPage() {
     } finally {
       setLoading(false)
     }
-  }, [network.baseUrl, nodeId, clearRaw, captureRaw])
+  }, [network.baseUrl, nodeID, clearRaw, captureRaw])
 
   const uptimePercent = validator?.uptime
     ? parseFloat(validator.uptime)
@@ -219,8 +202,8 @@ export default function ValidatorStatusPage() {
           <FormField
             label="Node ID"
             id="node-id"
-            value={nodeId}
-            onChange={setNodeId}
+            value={nodeID}
+            onChange={setNodeID}
             placeholder="NodeID-..."
             monospace
           />
