@@ -257,7 +257,7 @@ describe("VerificationService", () => {
 
     it("returns correct URL for avalanche-explorer provider", () => {
       const url = VerificationService.getExplorerUrl("avalanche-explorer", "0xABC", 43114)
-      expect(url).toBe("https://subnets.avax.network/c-chain/address/0xABC?tab=code")
+      expect(url).toBe("https://build.avax.network/explorer/mainnet/c-chain/address/0xABC?tab=contract")
     })
 
     it("returns '#' for unknown provider", () => {

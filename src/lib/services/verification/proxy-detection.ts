@@ -16,7 +16,16 @@ const SLOTS = {
   admin: "0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103",
 } as const
 
-export type ProxyStandard = "EIP-1967" | "EIP-1967 Beacon" | "EIP-897" | "Unknown"
+export type ProxyStandard = "EIP-1167" | "EIP-1967" | "EIP-1967 Beacon" | "EIP-897" | "Unknown"
+
+/** EIP-1167 minimal proxy runtime code: fixed prefix, 20-byte implementation, fixed suffix. */
+const EIP1167_PATTERN = /^0x363d3d373d3d3d363d73([0-9a-f]{40})5af43d82803e903d91602b57fd5bf3$/i
+
+/** Returns the implementation address if `code` is an EIP-1167 clone, else null. */
+export function parseMinimalProxy(code: string): string | null {
+  const match = EIP1167_PATTERN.exec(code)
+  return match ? getAddress("0x" + match[1].toLowerCase()) : null
+}
 
 export interface ProxyInfo {
   isProxy: boolean
@@ -43,6 +52,12 @@ export async function detectProxy(address: string, rpcUrl: string): Promise<Prox
   const provider = new JsonRpcProvider(rpcUrl)
 
   try {
+    // EIP-1167 clones have no storage slots — the implementation is baked into the bytecode
+    const cloneImpl = parseMinimalProxy(await provider.getCode(address))
+    if (cloneImpl) {
+      return { isProxy: true, standard: "EIP-1167", implementationAddress: cloneImpl }
+    }
+
     // Read implementation and beacon slots in parallel
     const [implResult, beaconResult] = await Promise.allSettled([
       provider.getStorage(address, SLOTS.implementation),

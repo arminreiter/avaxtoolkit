@@ -53,6 +53,18 @@ export function VerificationStatus({ data, loading, onVerified }: VerificationSt
   async function handleCrossVerify(targetProviderId: string) {
     if (!data?.source) return
 
+    // Clones are 45 bytes of forwarding code — no source will ever recompile to that
+    if (data.proxy.standard === "EIP-1167") {
+      setVerifyResults(prev => ({
+        ...prev,
+        [targetProviderId]: {
+          success: false,
+          message: `This address is an EIP-1167 minimal proxy (clone) of ${data.proxy.implementationAddress}. Clones can't be verified from source — verify the implementation contract instead.`,
+        },
+      }))
+      return
+    }
+
     setVerifyingProvider(targetProviderId)
     setVerifyResults(prev => {
       const next = { ...prev }

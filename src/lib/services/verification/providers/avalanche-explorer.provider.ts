@@ -13,10 +13,8 @@ export class AvalancheExplorerProvider extends SourcifyProvider {
   }
 
   explorerUrl(address: string, chainId: number): string {
-    const base = chainId === 43113
-      ? "https://subnets-test.avax.network"
-      : "https://subnets.avax.network"
-    return `${base}/c-chain/address/${address}?tab=code`
+    const network = chainId === 43113 ? "fuji" : "mainnet"
+    return `https://build.avax.network/explorer/${network}/c-chain/address/${address}?tab=contract`
   }
 
   // sourcify.avax.network only supports Sourcify v1 API
