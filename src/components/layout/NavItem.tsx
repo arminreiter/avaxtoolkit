@@ -46,7 +46,7 @@ export function NavItem({ section }: { section: NavSection }) {
 
   return (
     <div>
-      <button onClick={() => setIsOpen(!isOpen)}
+      <button type="button" aria-expanded={isOpen} onClick={() => setIsOpen(!isOpen)}
         className={cn(
           "flex items-center gap-2 px-3 py-1.5 text-[13px] font-mono transition-all duration-150 w-full group border border-transparent",
           isActive

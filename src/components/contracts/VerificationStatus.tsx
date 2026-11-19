@@ -6,6 +6,9 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { VerificationService, type AggregatedVerification } from "@/lib/services/verification"
+import { errorMessage, truncateId } from "@/lib/utils"
+import { appLinks } from "@/lib/explorer-links"
+import { CopyableId } from "@/components/tools/CopyableId"
 
 const PROVIDER_NAMES: Record<string, string> = {
   routescan: "Snowtrace (Routescan)",
@@ -89,7 +92,7 @@ export function VerificationStatus({ data, loading, onVerified }: VerificationSt
         ...prev,
         [targetProviderId]: {
           success: false,
-          message: err instanceof Error ? err.message : "Verification failed",
+          message: errorMessage(err, "Verification failed"),
         },
       }))
     } finally {
@@ -127,7 +130,7 @@ export function VerificationStatus({ data, loading, onVerified }: VerificationSt
         ...prev,
         [targetProviderId]: {
           success: false,
-          message: err instanceof Error ? err.message : "Verification failed",
+          message: errorMessage(err, "Verification failed"),
         },
       }))
     } finally {
@@ -164,9 +167,15 @@ export function VerificationStatus({ data, loading, onVerified }: VerificationSt
             )}
           </div>
           {data.proxy.implementationAddress && (
-            <div className="mt-2 flex items-center gap-2 text-sm text-muted-foreground font-mono">
+            <div className="mt-2 flex items-center gap-2 text-sm text-muted-foreground font-mono min-w-0">
               <ArrowRight className="h-3 w-3 shrink-0" />
-              <span className="truncate">Implementation: {data.proxy.implementationAddress}</span>
+              <span className="shrink-0">Implementation:</span>
+              <CopyableId
+                value={data.proxy.implementationAddress}
+                display={truncateId(data.proxy.implementationAddress, 10, 8)}
+                href={appLinks.contract(data.proxy.implementationAddress)}
+                explorer="address"
+              />
             </div>
           )}
           {data.proxy.implementationAbi ? (

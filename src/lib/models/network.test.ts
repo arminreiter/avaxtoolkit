@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { DEFAULT_NETWORKS, deriveEndpoints } from "./network"
+import { DEFAULT_NETWORKS, deriveEndpoints, isValidNetwork, hrpForNetwork } from "./network"
 
 describe("network model", () => {
   it("has mainnet, fuji, and localhost defaults", () => {
@@ -29,5 +29,19 @@ describe("network model", () => {
   it("fuji has correct chain ID", () => {
     const fuji = DEFAULT_NETWORKS.find(n => n.id === "fuji")!
     expect(fuji.chainId).toBe(43113)
+  })
+
+  it("isValidNetwork accepts real network types only", () => {
+    const base = { id: "x", name: "X", baseUrl: "https://x.io", chainId: 1 }
+    for (const type of ["mainnet", "fuji", "localhost", "custom"]) {
+      expect(isValidNetwork({ ...base, type })).toBe(true)
+    }
+    expect(isValidNetwork({ ...base, type: "testnet" })).toBe(false)
+    expect(isValidNetwork(base)).toBe(false)
+    expect(isValidNetwork({ ...base, type: "custom", baseUrl: "ftp://x" })).toBe(false)
+  })
+
+  it("maps networks to bech32 HRPs", () => {
+    expect(DEFAULT_NETWORKS.map(hrpForNetwork)).toEqual(["avax", "fuji", "local"])
   })
 })

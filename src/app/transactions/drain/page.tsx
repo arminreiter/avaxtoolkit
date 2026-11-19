@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react"
 import { isAddress } from "ethers/address"
-import { formatEther } from "ethers/utils"
+import { formatEther, formatUnits } from "ethers/utils"
 import { Wallet } from "ethers/wallet"
 import { type TransactionRequest } from "ethers/providers"
 import { CChainService } from "@/lib/services/cchain.service"
@@ -10,13 +10,16 @@ import { Plus, Trash2 } from "lucide-react"
 import { ToolCard } from "@/components/tools/ToolCard"
 import { FormField } from "@/components/tools/FormField"
 import { LoadingButton } from "@/components/tools/LoadingButton"
+import { useConfirm } from "@/components/tools/ConfirmDialog"
 import { useWallet } from "@/lib/contexts/wallet-context"
 import { useNetwork } from "@/lib/contexts/network-context"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { TxBatchResultTable } from "@/components/tools/TxBatchResultTable"
-import { truncateId } from "@/lib/utils"
+import { truncateId, errorMessage } from "@/lib/utils"
+import { recordSentTx } from "@/lib/models/tx-history"
+import { AssetSelect, useAssetSelection } from "@/components/wallet/AssetSelect"
 
 interface SourceWallet {
   privateKey: string
@@ -30,9 +33,19 @@ interface DrainResult {
   status: "pending" | "sent" | "confirmed" | "failed" | "skipped"
 }
 
+interface DrainPlan {
+  wallet: Wallet
+  balance: string // AVAX, formatted
+  amount: string // amount that will be sent, formatted in the selected asset
+  units?: bigint
+  txParams?: TransactionRequest
+  skip?: string
+}
+
 export default function DrainPage() {
-  const { wallets } = useWallet()
-  const { endpoints } = useNetwork()
+  const { wallets, activeWallet } = useWallet()
+  const { network, endpoints } = useNetwork()
+  const { tokens, asset, setAsset, token, symbol } = useAssetSelection(network.chainId)
   const [destination, setDestination] = useState("")
   const [sources, setSources] = useState<SourceWallet[]>([{ privateKey: "" }])
   const [useStoredWallets, setUseStoredWallets] = useState(false)
@@ -40,6 +53,22 @@ export default function DrainPage() {
   const [results, setResults] = useState<DrainResult[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
+  const [prevNetworkId, setPrevNetworkId] = useState(network.id)
+  const [prefilled, setPrefilled] = useState(false)
+  const { confirm, dialog } = useConfirm()
+
+  // Results belong to the previous network: clear them on switch (form inputs are kept)
+  if (prevNetworkId !== network.id) {
+    setPrevNetworkId(network.id)
+    setResults([])
+    setError("")
+  }
+
+  // Prefill the destination once with the active wallet (wallets load from storage after mount)
+  if (!prefilled && activeWallet) {
+    setPrefilled(true)
+    if (!destination) setDestination(activeWallet.address)
+  }
 
   function addSource() {
     setSources(prev => [...prev, { privateKey: "" }])
@@ -64,28 +93,30 @@ export default function DrainPage() {
 
   async function handleDrain() {
     setError("")
-    setLoading(true)
     setResults([])
 
-    if (!isAddress(destination.trim())) {
+    const dest = destination.trim()
+    if (!isAddress(dest)) {
       setError("Invalid destination address")
-      setLoading(false)
       return
     }
 
+    setLoading(true)
     try {
       const provider = CChainService.getProvider(endpoints.cChain)
 
       const walletsToSign: Wallet[] = []
+      const addWallet = (w: Wallet) => {
+        if (!walletsToSign.some(x => x.address === w.address)) walletsToSign.push(w)
+      }
 
       for (let i = 0; i < sources.length; i++) {
         const s = sources[i]
         if (s.privateKey.trim()) {
           try {
-            walletsToSign.push(new Wallet(s.privateKey.trim(), provider))
+            addWallet(new Wallet(s.privateKey.trim(), provider))
           } catch {
             setError(`Invalid private key at position ${i + 1}`)
-            setLoading(false)
             return
           }
         }
@@ -94,57 +125,101 @@ export default function DrainPage() {
       if (useStoredWallets) {
         for (const id of selectedWalletIds) {
           const stored = wallets.find(w => w.id === id)
-          if (stored?.privateKey) {
-            walletsToSign.push(new Wallet(stored.privateKey, provider))
-          }
+          if (stored?.privateKey) addWallet(new Wallet(stored.privateKey, provider))
         }
       }
 
       if (walletsToSign.length === 0) {
         setError("No source wallets provided")
-        setLoading(false)
         return
       }
 
-      const drainResults: DrainResult[] = walletsToSign.map(w => ({
-        address: w.address, amount: "...", status: "pending" as const,
+      const self = walletsToSign.find(w => w.address.toLowerCase() === dest.toLowerCase())
+      if (self) {
+        setError(`Destination ${self.address} is also a source wallet. Remove it from the sources or pick another destination.`)
+        return
+      }
+
+      // Plan every transfer up front so the confirmation can show exactly what will be sent
+      const feeData = await provider.getFeeData()
+      const effectiveGasPrice = feeData.maxFeePerGas ?? feeData.gasPrice
+      if (!effectiveGasPrice) {
+        setError("Could not determine gas price")
+        return
+      }
+      const plans: DrainPlan[] = await Promise.all(walletsToSign.map(async (wallet): Promise<DrainPlan> => {
+        const balance = await provider.getBalance(wallet.address)
+        const base = { wallet, balance: formatEther(balance) }
+        if (token) {
+          // Token mode: send the full token balance; the wallet's AVAX only pays gas
+          const [tokenBalance] = await CChainService.getTokenBalances(endpoints.cChain, wallet.address, [token.address])
+          if (!tokenBalance) return { ...base, amount: "0", skip: `No ${token.symbol} balance` }
+          const amount = formatUnits(tokenBalance, token.decimals)
+          const transfer = CChainService.encodeTokenTransfer(token.address, dest, tokenBalance)
+          const gasLimit = await provider.estimateGas({ ...transfer, from: wallet.address })
+          if (balance < effectiveGasPrice * gasLimit) return { ...base, amount, skip: "Insufficient AVAX for gas" }
+          return { ...base, amount, units: tokenBalance, txParams: { ...transfer, gasLimit } }
+        }
+        const gasCost = effectiveGasPrice * BigInt(21000)
+        if (balance <= gasCost) return { ...base, amount: formatEther(balance), skip: "Insufficient balance for gas" }
+        const value = balance - gasCost
+        return { ...base, amount: formatEther(value), units: value, txParams: { to: dest, value, gasLimit: 21000 } }
+      }))
+
+      const sendable = plans.filter(p => p.txParams)
+      if (sendable.length === 0) {
+        setResults(plans.map(p => ({ address: p.wallet.address, amount: p.amount, status: "skipped" as const, error: p.skip })))
+        setError("Nothing to drain: no source wallet has a sendable balance")
+        return
+      }
+      const total = sendable.reduce((sum, p) => sum + p.units!, BigInt(0))
+      const decimals = token?.decimals ?? 18
+      const ok = await confirm({
+        title: `Drain ${formatUnits(total, decimals)} ${symbol}?`,
+        description: (
+          <div className="space-y-2 text-xs">
+            <div className="font-mono break-all">To: {dest}</div>
+            <div className="max-h-60 overflow-auto border">
+              <table className="w-full font-mono">
+                <thead>
+                  <tr className="border-b bg-muted/50">
+                    <th className="text-left p-1.5">Source</th>
+                    <th className="text-right p-1.5">AVAX balance</th>
+                    <th className="text-right p-1.5">Sends ({symbol})</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {plans.map(p => (
+                    <tr key={p.wallet.address} className="border-b last:border-0">
+                      <td className="p-1.5">{truncateId(p.wallet.address, 6, 4)}</td>
+                      <td className="p-1.5 text-right">{p.balance}</td>
+                      <td className={`p-1.5 text-right ${p.skip ? "text-yellow-500" : ""}`}>{p.skip ? `skip: ${p.skip}` : p.amount}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="font-mono">Total: {formatUnits(total, decimals)} {symbol} from {sendable.length} wallet{sendable.length !== 1 ? "s" : ""} on {network.name}</div>
+          </div>
+        ),
+        confirmLabel: "Drain",
+        destructive: true,
+      })
+      if (!ok) return
+
+      const drainResults: DrainResult[] = plans.map(p => ({
+        address: p.wallet.address, amount: p.amount,
+        status: p.skip ? "skipped" as const : "pending" as const, error: p.skip,
       }))
       setResults([...drainResults])
 
-      const feeData = await provider.getFeeData()
-      const balances = await Promise.all(walletsToSign.map(w => provider.getBalance(w.address)))
-
-      for (let i = 0; i < walletsToSign.length; i++) {
+      for (let i = 0; i < plans.length; i++) {
+        const { wallet, amount, txParams } = plans[i]
+        if (!txParams) continue
         try {
-          const wallet = walletsToSign[i]
-          const balance = balances[i]
-          const effectiveGasPrice = feeData.maxFeePerGas ?? feeData.gasPrice
-          if (!effectiveGasPrice) {
-            drainResults[i].status = "skipped"
-            drainResults[i].error = "Could not determine gas price"
-            setResults([...drainResults])
-            continue
-          }
-          const gasCost = effectiveGasPrice * BigInt(21000)
-
-          if (balance <= gasCost) {
-            drainResults[i].amount = formatEther(balance)
-            drainResults[i].status = "skipped"
-            drainResults[i].error = "Insufficient balance for gas"
-            setResults([...drainResults])
-            continue
-          }
-
-          const sendAmount = balance - gasCost
-          drainResults[i].amount = formatEther(sendAmount)
           drainResults[i].status = "sent"
           setResults([...drainResults])
 
-          const txParams: TransactionRequest = {
-            to: destination.trim(),
-            value: sendAmount,
-            gasLimit: 21000,
-          }
           if (feeData.maxFeePerGas && feeData.maxPriorityFeePerGas) {
             txParams.maxFeePerGas = feeData.maxFeePerGas
             txParams.maxPriorityFeePerGas = feeData.maxPriorityFeePerGas
@@ -152,6 +227,7 @@ export default function DrainPage() {
             txParams.gasPrice = feeData.gasPrice
           }
           const tx = await wallet.sendTransaction(txParams)
+          recordSentTx(tx, `Drain ${amount} ${symbol}`)
           drainResults[i].hash = tx.hash
           setResults([...drainResults])
 
@@ -160,12 +236,12 @@ export default function DrainPage() {
           setResults([...drainResults])
         } catch (err) {
           drainResults[i].status = "failed"
-          drainResults[i].error = err instanceof Error ? err.message : "Failed"
+          drainResults[i].error = errorMessage(err, "Failed")
           setResults([...drainResults])
         }
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Drain failed")
+      setError(errorMessage(err, "Drain failed"))
     } finally {
       setLoading(false)
     }
@@ -174,11 +250,15 @@ export default function DrainPage() {
   const storedWalletsWithKeys = useMemo(() => wallets.filter(w => w.privateKey), [wallets])
 
   return (
-    <ToolCard title="Drain" description="Consolidate balances from multiple wallets into one destination.">
+    <ToolCard title="Drain" description="Consolidate AVAX or ERC-20 balances from multiple wallets into one destination.">
       <div className="space-y-4">
         <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3 text-xs text-yellow-700 dark:text-yellow-400">
-          <strong>Warning:</strong> This will send the full balance (minus gas) from each source wallet to the destination.
+          <strong>Warning:</strong> {token
+            ? `This will send the full ${token.symbol} balance from each source wallet to the destination. Each source needs AVAX for gas.`
+            : "This will send the full balance (minus gas) from each source wallet to the destination."}
         </div>
+
+        <AssetSelect tokens={tokens} value={asset} onChange={setAsset} />
 
         <FormField label="Destination Address" id="destination" value={destination} onChange={setDestination}
           placeholder="0x..." monospace />
@@ -220,7 +300,7 @@ export default function DrainPage() {
               <Input type="password" value={s.privateKey} onChange={e => updateSource(i, e.target.value)}
                 placeholder="Private key..." className="flex-1 font-mono text-sm h-8" />
               {sources.length > 1 && (
-                <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => removeSource(i)}>
+                <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => removeSource(i)} aria-label="Remove source">
                   <Trash2 className="h-3.5 w-3.5" />
                 </Button>
               )}
@@ -232,7 +312,7 @@ export default function DrainPage() {
           Drain All Sources
         </LoadingButton>
 
-        <TxBatchResultTable results={results} addressLabel="Source" showAmountUnit="AVAX" />
+        <TxBatchResultTable results={results} addressLabel="Source" showAmountUnit={symbol} />
 
         {error && (
           <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3">
@@ -240,6 +320,7 @@ export default function DrainPage() {
           </div>
         )}
       </div>
+      {dialog}
     </ToolCard>
   )
 }

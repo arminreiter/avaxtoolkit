@@ -4,6 +4,7 @@ import { SnowscanProvider } from "./providers/snowscan.provider"
 import { SourcifyProvider } from "./providers/sourcify.provider"
 import { AvalancheExplorerProvider } from "./providers/avalanche-explorer.provider"
 import { detectProxy } from "./proxy-detection"
+import { errorMessage } from "@/lib/utils"
 
 const providers: VerificationProvider[] = [
   new RoutescanProvider(),
@@ -86,7 +87,7 @@ export class VerificationService {
         provider: providers[i].id,
         verified: false,
         unavailable: true,
-        unavailableReason: r.reason instanceof Error ? r.reason.message : "Provider unavailable",
+        unavailableReason: errorMessage(r.reason, "Provider unavailable"),
       }
     })
 

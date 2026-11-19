@@ -4,10 +4,18 @@ import { useNetwork } from "@/lib/contexts/network-context"
 import { useWallet } from "@/lib/contexts/wallet-context"
 import { Moon, Sun, Wallet, ShieldAlert } from "lucide-react"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { truncateId } from "@/lib/utils"
+import { cn, truncateId } from "@/lib/utils"
+import type { NetworkType } from "@/lib/models/network"
 import { useTheme } from "next-themes"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+
+const NETWORK_BADGE: Record<NetworkType, { label: string; className: string }> = {
+  mainnet: { label: "MAINNET", className: "border-primary/50 text-primary bg-primary/10" },
+  fuji: { label: "TESTNET", className: "border-terminal/50 text-terminal bg-terminal/10" },
+  localhost: { label: "LOCAL", className: "border-border text-muted-foreground" },
+  custom: { label: "CUSTOM", className: "border-neon/50 text-neon bg-neon/10" },
+}
 
 export function Header() {
   const { network, setNetwork, isConnected, connectionWarning, allNetworks } = useNetwork()
@@ -34,6 +42,12 @@ export function Header() {
               ))}
             </SelectContent>
           </Select>
+          <span className={cn(
+            "hidden sm:inline-flex items-center border px-1.5 py-0.5 text-[10px] font-mono tracking-wider shrink-0",
+            NETWORK_BADGE[network.type].className,
+          )}>
+            {NETWORK_BADGE[network.type].label}
+          </span>
         </div>
 
         {/* Connection status */}
@@ -78,6 +92,7 @@ export function Header() {
           size="sm"
           className="h-7 text-xs font-mono gap-1.5"
           onClick={openWalletDialog}
+          aria-label="Open wallet manager"
         >
           <Wallet className="h-3.5 w-3.5" />
           <span className="hidden sm:inline">
@@ -89,6 +104,7 @@ export function Header() {
           size="icon"
           className="h-7 w-7"
           onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
+          aria-label="Toggle theme"
         >
           <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
           <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />

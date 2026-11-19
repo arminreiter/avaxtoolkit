@@ -194,6 +194,8 @@ export default function AboutPage() {
               <span>OPEN_SOURCE</span>
               <span className="text-primary/30">|</span>
               <span>STATIC_BUILD</span>
+              <span className="text-primary/30">|</span>
+              <span>v{process.env.NEXT_PUBLIC_APP_VERSION}</span>
             </div>
           </div>
         </div>
@@ -213,7 +215,7 @@ export default function AboutPage() {
             A web-based toolkit for interacting with the Avalanche network.
             Explore C-Chain data, verify contracts, check validator status,
             manage wallets, inspect L1s — all through direct JSON-RPC calls to your
-            node. No middlemen, no external APIs.
+            node. No middlemen; external explorer APIs are only used for contract verification.
           </p>
         </TerminalBlock>
 
@@ -230,13 +232,14 @@ export default function AboutPage() {
           </h2>
           <p className="text-sm text-muted-foreground leading-relaxed">
             Runs entirely on your local machine.{" "}
-            <span className="text-foreground font-medium">No data is ever sent to external servers.</span>{" "}
+            <span className="text-foreground font-medium">Your keys never leave your machine.</span>{" "}
             All RPC calls go directly from your browser to the configured node
-            endpoint. No backend. No telemetry. No tracking. Your keys and
-            addresses never leave your machine.
+            endpoint. No backend. No telemetry. No tracking. Only contract
+            verification contacts third-party explorer APIs, sending the
+            contract address (and your API key, if set).
           </p>
           <div className="about-code-block font-mono text-[11px] text-muted-foreground/60 space-y-0.5">
-            <div><span className="text-green-400/60">&#10003;</span> Zero outbound connections</div>
+            <div><span className="text-green-400/60">&#10003;</span> Only your node + explorer APIs for verification</div>
             <div><span className="text-green-400/60">&#10003;</span> No cookies, no analytics</div>
             <div><span className="text-green-400/60">&#10003;</span> Static build — runs offline after load</div>
             <div><span className="text-green-400/60">&#10003;</span> Keys never leave the browser</div>
@@ -340,7 +343,10 @@ export default function AboutPage() {
           <p className="text-sm text-muted-foreground leading-relaxed">
             Makes JSON-RPC calls directly from the browser to Avalanche node APIs —
             Platform (P-Chain), Contract (C-Chain), and AVM (X-Chain).
-            No intermediary server, no proxy.
+            No intermediary server for RPC. Contract verification lookups are the
+            one exception: those explorer API calls are relayed through a stateless
+            CORS proxy rewrite (Vercel edge, or <InlineCode>next dev</InlineCode> locally),
+            and any API key you configured is sent with them.
           </p>
           <p className="text-sm text-muted-foreground leading-relaxed">
             Built as a static Next.js application. Once built, serve it from any

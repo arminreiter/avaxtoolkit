@@ -52,8 +52,13 @@ interface NetworkContextValue {
   /** Warning message when a local/private endpoint is blocked (e.g. by an ad blocker) */
   connectionWarning: string | null
   customNetworks: Network[]
-  addCustomNetwork: (network: Network) => void
+  /** Returns false (and adds nothing) if the id collides with a default or existing network. */
+  addCustomNetwork: (network: Network) => boolean
+  updateCustomNetwork: (network: Network) => void
+  /** Falls back to the first default network when the removed one is active. */
   removeCustomNetwork: (id: string) => void
+  /** Replaces all custom networks; falls back to the first default network if the active one disappears. */
+  replaceCustomNetworks: (list: Network[]) => void
   allNetworks: Network[]
 }
 
@@ -70,6 +75,18 @@ function readCustomNetworks(): Network[] {
     }
   } catch { /* localStorage not available */ }
   return []
+}
+
+function persistCustomNetworks(list: Network[]) {
+  try { localStorage.setItem(STORAGE_KEY_CUSTOM, JSON.stringify(list)) } catch { /* noop */ }
+}
+
+/** Keep ?network= in the URL in sync with the selected network (other params preserved). */
+function syncUrlNetwork(id: string) {
+  const url = new URL(window.location.href)
+  if (url.searchParams.get("network") === id) return
+  url.searchParams.set("network", id)
+  window.history.replaceState(window.history.state, "", url)
 }
 
 export function NetworkProvider({ children }: { children: ReactNode }) {
@@ -130,34 +147,46 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
   }, [network.baseUrl, network.plainRpc, network.chainId])
   /* eslint-enable react-hooks/set-state-in-effect */
 
+  // Keep ?network= in sync on every switch (incl. the initial hydrated selection).
+  // ponytail: re-applied per network change only; a client navigation that drops the param restores it on the next switch
+  useEffect(() => { syncUrlNetwork(network.id) }, [network.id])
+
   const setNetwork = useCallback((n: Network) => {
     setNetworkState(n)
     try { localStorage.setItem(STORAGE_KEY_NETWORK, n.id) } catch { /* noop */ }
   }, [])
 
+  const replaceCustomNetworks = useCallback((list: Network[]) => {
+    setCustomNetworks(list)
+    persistCustomNetworks(list)
+    if (network.type === "custom") {
+      const next = list.find(n => n.id === network.id)
+      if (!next) setNetwork(DEFAULT_NETWORKS[0])
+      else if (next !== network) setNetworkState(next)
+    }
+  }, [network, setNetwork])
+
   const addCustomNetwork = useCallback((n: Network) => {
-    setCustomNetworks(prev => {
-      const updated = [...prev, n]
-      try { localStorage.setItem(STORAGE_KEY_CUSTOM, JSON.stringify(updated)) } catch { /* noop */ }
-      return updated
-    })
-  }, [])
+    if ([...DEFAULT_NETWORKS, ...customNetworks].some(x => x.id === n.id)) return false
+    replaceCustomNetworks([...customNetworks, n])
+    return true
+  }, [customNetworks, replaceCustomNetworks])
+
+  const updateCustomNetwork = useCallback((n: Network) => {
+    replaceCustomNetworks(customNetworks.map(x => x.id === n.id ? n : x))
+  }, [customNetworks, replaceCustomNetworks])
 
   const removeCustomNetwork = useCallback((id: string) => {
-    setCustomNetworks(prev => {
-      const updated = prev.filter(n => n.id !== id)
-      try { localStorage.setItem(STORAGE_KEY_CUSTOM, JSON.stringify(updated)) } catch { /* noop */ }
-      return updated
-    })
-  }, [])
+    replaceCustomNetworks(customNetworks.filter(n => n.id !== id))
+  }, [customNetworks, replaceCustomNetworks])
 
   const endpoints = useMemo(() => deriveEndpoints(network.baseUrl, network.plainRpc), [network.baseUrl, network.plainRpc])
   const allNetworks = useMemo(() => [...DEFAULT_NETWORKS, ...customNetworks], [customNetworks])
 
   const value = useMemo(() => ({
     network, endpoints, setNetwork, isConnected, connectionWarning,
-    customNetworks, addCustomNetwork, removeCustomNetwork, allNetworks,
-  }), [network, endpoints, setNetwork, isConnected, connectionWarning, customNetworks, addCustomNetwork, removeCustomNetwork, allNetworks])
+    customNetworks, addCustomNetwork, updateCustomNetwork, removeCustomNetwork, replaceCustomNetworks, allNetworks,
+  }), [network, endpoints, setNetwork, isConnected, connectionWarning, customNetworks, addCustomNetwork, updateCustomNetwork, removeCustomNetwork, replaceCustomNetworks, allNetworks])
 
   return (
     <NetworkContext.Provider value={value}>

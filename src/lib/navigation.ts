@@ -21,6 +21,10 @@ export const navigation: NavSection[] = [
       { label: "Send", href: "/transactions/send" },
       { label: "Fan Out", href: "/transactions/fan-out" },
       { label: "Drain", href: "/transactions/drain" },
+      { label: "Tokens", href: "/transactions/tokens" },
+      { label: "History", href: "/transactions/history" },
+      { label: "Raw Transaction", href: "/transactions/raw" },
+      { label: "X-Chain Balance", href: "/wallet/x-chain-balance" },
     ],
   },
   {
@@ -62,13 +66,12 @@ export const navigation: NavSection[] = [
     ],
   },
   {
-    label: "Key Management", href: "/wallet", icon: KeyRound,
+    label: "Key Tools", href: "/wallet", icon: KeyRound,
     children: [
       { label: "Generate", href: "/wallet/generate" },
       { label: "Derive Addresses", href: "/wallet/derive" },
       { label: "Convert Address", href: "/wallet/convert" },
       { label: "Import / Export", href: "/wallet/import-export" },
-      { label: "X-Chain Balance", href: "/wallet/x-chain-balance" },
     ],
   },
   { label: "Settings", href: "/settings", icon: Settings },

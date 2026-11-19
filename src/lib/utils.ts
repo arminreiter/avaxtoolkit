@@ -37,19 +37,67 @@ export function formatTimestamp(unixSeconds: string | number, style: "datetime" 
 }
 
 
-/** Auto-prefix P-Chain or X-Chain address if user pastes bare `avax1...` */
+/** Bare bech32 Avalanche address with any HRP (avax1…, fuji1…, local1…, custom1…). */
+const BARE_BECH32 = /^[a-z]+1[02-9ac-hj-np-z]{38}$/i
+
+/** Auto-prefix P-Chain or X-Chain address if user pastes a bare `avax1...`/`fuji1...` */
 export function normalizePChainAddress(input: string): string {
   const trimmed = input.trim()
   if (/^P-/i.test(trimmed)) return `P-${trimmed.slice(2)}`
-  if (/^avax1/i.test(trimmed)) return `P-${trimmed}`
+  if (BARE_BECH32.test(trimmed)) return `P-${trimmed}`
   return trimmed
 }
 
 export function normalizeXChainAddress(input: string): string {
   const trimmed = input.trim()
   if (/^X-/i.test(trimmed)) return `X-${trimmed.slice(2)}`
-  if (/^avax1/i.test(trimmed)) return `X-${trimmed}`
+  if (BARE_BECH32.test(trimmed)) return `X-${trimmed}`
   return trimmed
+}
+
+/** Format a raw integer token amount: thousands separators, trailing zeros trimmed. */
+export function formatTokenAmount(raw: bigint, decimals: number, maxFractionDigits = 4): string {
+  const ZERO = BigInt(0), TEN = BigInt(10), TWO = BigInt(2)
+  const neg = raw < ZERO
+  const abs = neg ? -raw : raw
+  const digits = Math.min(decimals, Math.max(0, maxFractionDigits))
+  // round half up at the cut-off digit, then split into whole/fraction
+  const scale = TEN ** BigInt(decimals - digits)
+  const rounded = scale > BigInt(1) ? (abs + scale / TWO) / scale : abs
+  const fracBase = TEN ** BigInt(digits)
+  const whole = (rounded / fracBase).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")
+  const frac = digits > 0 ? (rounded % fracBase).toString().padStart(digits, "0").replace(/0+$/, "") : ""
+  return `${neg ? "-" : ""}${whole}${frac ? `.${frac}` : ""}`
+}
+
+/** Format a wei amount as AVAX (18 decimals, no unit). */
+export function formatAvaxWei(wei: bigint, maxFractionDigits = 4): string {
+  return formatTokenAmount(wei, 18, maxFractionDigits)
+}
+
+/** Format a wei amount in gwei with fixed fraction digits, e.g. '25.00'. */
+export function formatGwei(wei: bigint, fractionDigits = 2): string {
+  return Number(formatUnits(wei, 9)).toFixed(fractionDigits)
+}
+
+/** THE single uptime threshold set: >=90 green, >=80 yellow, else destructive. */
+export function uptimeColor(pct: number): string {
+  if (pct >= 90) return "text-green-500"
+  if (pct >= 80) return "text-yellow-500"
+  return "text-destructive"
+}
+
+/** Countdown to a unix timestamp (seconds): '3d 4h', '5h 12m', '12m', 'ended'. */
+export function timeUntil(unixSeconds: number, nowMs = Date.now()): string {
+  const diff = Math.floor(unixSeconds - nowMs / 1000)
+  if (diff <= 0) return "ended"
+  const d = Math.floor(diff / 86400)
+  const h = Math.floor((diff % 86400) / 3600)
+  const m = Math.floor((diff % 3600) / 60)
+  if (d > 0) return `${d}d ${h}h`
+  if (h > 0) return `${h}h ${m}m`
+  if (m > 0) return `${m}m`
+  return `${diff}s`
 }
 
 /** Relative time display from a unix timestamp (seconds) */
@@ -58,7 +106,8 @@ export function relativeTime(timestamp: number): string {
   if (diff < 5) return "now"
   if (diff < 60) return `${diff}s`
   if (diff < 3600) return `${Math.floor(diff / 60)}m`
-  return `${Math.floor(diff / 3600)}h`
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h`
+  return `${Math.floor(diff / 86400)}d`
 }
 
 /** Format gas values to compact human-readable form (e.g. 1.2M, 500K) */
@@ -81,4 +130,9 @@ export function gasColor(pct: number): string {
   if (pct > 80) return "text-red-500"
   if (pct > 50) return "text-amber-500"
   return "text-[#007700] dark:text-[#00ff41]"
+}
+
+/** Message of a thrown value, or `fallback` when it isn't an Error. */
+export function errorMessage(err: unknown, fallback: string): string {
+  return err instanceof Error ? err.message : fallback
 }

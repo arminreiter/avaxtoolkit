@@ -14,7 +14,7 @@ export function OutputDisplay({ label, value, monospace = true }: OutputDisplayP
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <Label>{label}</Label>
-        <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => copy(value)}>
+        <Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={() => copy(value)}>
           {copied ? <Check className="h-3 w-3 mr-1" /> : <Copy className="h-3 w-3 mr-1" />}
           {copied ? "Copied" : "Copy"}
         </Button>

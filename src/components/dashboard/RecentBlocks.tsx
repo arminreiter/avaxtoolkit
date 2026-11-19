@@ -1,11 +1,14 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import Link from "next/link"
 import { useNetwork } from "@/lib/contexts/network-context"
 import { CChainService } from "@/lib/services/cchain.service"
 import { relativeTime, formatGas, gasPercent, gasColor } from "@/lib/utils"
 import { Card, CardContent } from "@/components/ui/card"
 import { Blocks } from "lucide-react"
+import { appLinks } from "@/lib/explorer-links"
+import { useNow } from "@/lib/hooks/use-now"
 
 interface BlockData {
   number: number
@@ -15,10 +18,12 @@ interface BlockData {
   gasLimit: number
 }
 
-export function RecentBlocks() {
+export function RecentBlocks({ refreshKey = 0 }: { refreshKey?: number }) {
   const { endpoints } = useNetwork()
   const [blocks, setBlocks] = useState<BlockData[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  useNow() // keep ages live
 
   useEffect(() => {
     let cancelled = false
@@ -43,9 +48,10 @@ export function RecentBlocks() {
                 gasLimit: Number(b.gasLimit),
               }))
           )
+          setError(null)
         }
-      } catch {
-        /* silently fail */
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : String(err))
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -54,7 +60,7 @@ export function RecentBlocks() {
     return () => {
       cancelled = true
     }
-  }, [endpoints.cChain])
+  }, [endpoints.cChain, refreshKey])
 
   return (
     <Card className="animate-fade-in-up" style={{ animationDelay: "600ms" }}>
@@ -62,6 +68,7 @@ export function RecentBlocks() {
       <div className="terminal-chrome-header">
         <Blocks className="h-3 w-3 text-cyan-400" />
         <span>cchain.blocks --recent</span>
+        <Link href="/explorer" className="ml-auto hover:text-primary transition-colors">View all &rarr;</Link>
       </div>
 
       <CardContent className="pt-2 pb-2">
@@ -71,8 +78,11 @@ export function RecentBlocks() {
               <div key={i} className="h-8 shimmer" />
             ))}
           </div>
+        ) : error && blocks.length === 0 ? (
+          <p className="text-xs text-destructive font-mono py-2 break-words">error: {error}</p>
         ) : (
           <div className="font-mono text-[13px]">
+            {error && <p className="text-xs text-destructive font-mono py-1 break-words">refresh failed: {error}</p>}
             {/* Column headers */}
             <div className="flex items-center gap-3 py-1.5 text-[11px] text-muted-foreground/40 uppercase tracking-wider border-b border-border/50">
               <span className="min-w-[90px]">block</span>
@@ -88,9 +98,9 @@ export function RecentBlocks() {
                   key={block.number}
                   className="flex items-center gap-3 py-1.5 border-b border-border/20 last:border-0 hover:bg-muted/30 transition-colors"
                 >
-                  <span className="text-primary font-semibold min-w-[90px]">
+                  <Link href={appLinks.block(block.number)} className="text-primary font-semibold min-w-[90px] hover:underline">
                     #{block.number.toLocaleString()}
-                  </span>
+                  </Link>
                   <span className="text-muted-foreground min-w-[40px]">
                     {block.txCount}
                   </span>

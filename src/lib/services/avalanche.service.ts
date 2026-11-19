@@ -1,6 +1,6 @@
 import { RpcService } from "./rpc.service"
 import { deriveEndpoints } from "@/lib/models/network"
-import type { Validator, Subnet, Blockchain, PeerInfo, NodeVersionInfo, HealthResult } from "@/lib/models/avalanche"
+import type { Validator, Subnet, SubnetInfo, Blockchain, PeerInfo, NodeVersionInfo, HealthResult } from "@/lib/models/avalanche"
 
 function pChainUrl(baseUrl: string) {
   return deriveEndpoints(baseUrl).pChain
@@ -21,9 +21,11 @@ function healthUrl(baseUrl: string) {
 export class AvalancheService {
   // --- Validators ---
 
-  static async getValidators(baseUrl: string, subnetID?: string): Promise<Validator[]> {
+  /** Passing `nodeIDs` makes the node include each validator's `delegators` array. */
+  static async getValidators(baseUrl: string, subnetID?: string, nodeIDs?: string[]): Promise<Validator[]> {
     const params: Record<string, unknown> = {}
     if (subnetID) params.subnetID = subnetID
+    if (nodeIDs?.length) params.nodeIDs = nodeIDs
     const result = await RpcService.call<{ validators: Validator[] }>(
       pChainUrl(baseUrl),
       "platform.getCurrentValidators",
@@ -32,13 +34,10 @@ export class AvalancheService {
     return result.validators
   }
 
+  /** Includes `delegators` (the node returns them when nodeIDs is set). */
   static async getValidatorByNodeID(baseUrl: string, nodeID: string): Promise<Validator | null> {
-    const result = await RpcService.call<{ validators: Validator[] }>(
-      pChainUrl(baseUrl),
-      "platform.getCurrentValidators",
-      { nodeIDs: [nodeID] },
-    )
-    return result.validators[0] ?? null
+    const validators = await AvalancheService.getValidators(baseUrl, undefined, [nodeID])
+    return validators[0] ?? null
   }
 
   static async getValidatorsAt(
@@ -63,6 +62,15 @@ export class AvalancheService {
       "platform.getStake",
       { addresses },
     )
+  }
+
+  static async getPChainBalance(baseUrl: string, addresses: string[]) {
+    return RpcService.call<{
+      balance: string
+      unlocked: string
+      lockedStakeable: string
+      lockedNotStakeable: string
+    }>(pChainUrl(baseUrl), "platform.getBalance", { addresses })
   }
 
   static async getMinStake(baseUrl: string, subnetID?: string) {
@@ -95,6 +103,10 @@ export class AvalancheService {
       params,
     )
     return result.subnets
+  }
+
+  static async getSubnet(baseUrl: string, subnetID: string): Promise<SubnetInfo> {
+    return RpcService.call<SubnetInfo>(pChainUrl(baseUrl), "platform.getSubnet", { subnetID })
   }
 
   static async getSubnetValidators(baseUrl: string, subnetID: string): Promise<Validator[]> {
@@ -135,10 +147,12 @@ export class AvalancheService {
     addresses: string[],
     limit?: number,
     sourceChain?: string,
+    startIndex?: { address: string; utxo: string },
   ) {
     const params: Record<string, unknown> = { addresses }
     if (limit) params.limit = limit
     if (sourceChain) params.sourceChain = sourceChain
+    if (startIndex) params.startIndex = startIndex
     return RpcService.call<{
       numFetched: string
       utxos: string[]
@@ -160,6 +174,14 @@ export class AvalancheService {
       balances: { asset: string; balance: string }[]
     }>(xChainUrl(baseUrl), "avm.getAllBalances", { address })
     return result.balances
+  }
+
+  static async getAssetDescription(baseUrl: string, assetID: string) {
+    return RpcService.call<{ assetID: string; name: string; symbol: string; denomination: number }>(
+      xChainUrl(baseUrl),
+      "avm.getAssetDescription",
+      { assetID },
+    )
   }
 
   // --- Node info ---

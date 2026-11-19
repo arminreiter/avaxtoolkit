@@ -1,6 +1,7 @@
 import { JsonRpcProvider, Network } from "ethers/providers"
 import { Contract } from "ethers/contract"
 import { formatEther, formatUnits } from "ethers/utils"
+import type { TrackedToken } from "@/lib/models/token"
 
 const ERC20_ABI = [
   "function name() view returns (string)",
@@ -8,7 +9,21 @@ const ERC20_ABI = [
   "function decimals() view returns (uint8)",
   "function totalSupply() view returns (uint256)",
   "function balanceOf(address) view returns (uint256)",
+  "function transfer(address to, uint256 amount) returns (bool)",
 ]
+
+const WAVAX_ABI = [
+  "function deposit() payable",
+  "function withdraw(uint256 amount)",
+]
+
+const BLOCK_HASH_RE = /^0x[0-9a-fA-F]{64}$/
+
+/** RPC method + param for a block number, "latest" or a block hash. */
+function blockRpcParam(block: number | string) {
+  if (typeof block === "string" && BLOCK_HASH_RE.test(block)) return { method: "eth_getBlockByHash", param: block }
+  return { method: "eth_getBlockByNumber", param: block === "latest" ? "latest" : "0x" + Number(block).toString(16) }
+}
 
 export class CChainService {
   private static providers = new Map<string, JsonRpcProvider>()
@@ -50,23 +65,25 @@ export class CChainService {
     }
   }
 
-  static async getBlock(rpcUrl: string, blockNumber: number | "latest") {
+  /** Accepts a block number, "latest", or a 0x-prefixed 32-byte block hash. */
+  static async getBlock(rpcUrl: string, blockNumberOrHash: number | string) {
     const provider = CChainService.getProvider(rpcUrl)
-    const blockParam = blockNumber === "latest" ? "latest" : "0x" + blockNumber.toString(16)
+    const { method, param } = blockRpcParam(blockNumberOrHash)
     const [block, raw] = await Promise.all([
-      provider.getBlock(blockNumber),
-      provider.send("eth_getBlockByNumber", [blockParam, false]),
+      provider.getBlock(param),
+      provider.send(method, [param, false]),
     ])
-    CChainService.rawResponses["eth_getBlockByNumber"] = raw
+    CChainService.rawResponses[method] = raw
     return block
   }
 
-  static async getBlockFull(rpcUrl: string, blockNumber: number) {
+  /** Accepts a block number or a 0x-prefixed 32-byte block hash. */
+  static async getBlockFull(rpcUrl: string, blockNumberOrHash: number | string) {
     const provider = CChainService.getProvider(rpcUrl)
-    const blockParam = "0x" + blockNumber.toString(16)
+    const { method, param } = blockRpcParam(blockNumberOrHash)
     const [rawBlock, rawReceipts] = await Promise.all([
-      provider.send("eth_getBlockByNumber", [blockParam, true]),
-      provider.send("eth_getBlockReceipts", [blockParam]).catch(() => null),
+      provider.send(method, [param, true]),
+      provider.send("eth_getBlockReceipts", [param]).catch(() => null),
     ])
 
     // Fallback: if eth_getBlockReceipts is unsupported, fetch individual receipts
@@ -91,6 +108,7 @@ export class CChainService {
     return { rawBlock, rawReceipts }
   }
 
+  /** `tx === null` → not found; `receipt === null` with a tx → pending. */
   static async getTransaction(rpcUrl: string, txHash: string) {
     const provider = CChainService.getProvider(rpcUrl)
     const [tx, receipt, rawTx, rawReceipt] = await Promise.all([
@@ -136,6 +154,64 @@ export class CChainService {
     return result
   }
 
+  /**
+   * balanceOf for many tokens. ethers' JsonRpcProvider coalesces these concurrent calls into one
+   * JSON-RPC batch request, so this works on any network without a Multicall contract.
+   * A failing token (not a contract, non-standard) yields null instead of failing the whole list.
+   */
+  static async getTokenBalances(rpcUrl: string, owner: string, tokens: string[]): Promise<(bigint | null)[]> {
+    const provider = CChainService.getProvider(rpcUrl)
+    return Promise.all(tokens.map(address =>
+      (new Contract(address, ERC20_ABI, provider).balanceOf(owner) as Promise<bigint>).catch(() => null)
+    ))
+  }
+
+  /** Build an unsigned ERC-20 transfer (to = token contract, data = transfer calldata). */
+  static encodeTokenTransfer(token: string, to: string, amount: bigint) {
+    const contract = new Contract(token, ERC20_ABI)
+    return { to: token, data: contract.interface.encodeFunctionData("transfer", [to, amount]) }
+  }
+
+  /** Wrap AVAX: WAVAX.deposit() with the amount as value. */
+  static encodeWrap(wavax: string, amount: bigint) {
+    const contract = new Contract(wavax, WAVAX_ABI)
+    return { to: wavax, value: amount, data: contract.interface.encodeFunctionData("deposit") }
+  }
+
+  /** Unwrap WAVAX: WAVAX.withdraw(amount). */
+  static encodeUnwrap(wavax: string, amount: bigint) {
+    const contract = new Contract(wavax, WAVAX_ABI)
+    return { to: wavax, data: contract.interface.encodeFunctionData("withdraw", [amount]) }
+  }
+
+  /**
+   * Find ERC-20 tokens an address has interacted with, via Routescan's Etherscan-compatible
+   * API (proxied, see vercel.json). Mainnet/Fuji only — plain RPC cannot enumerate holdings.
+   */
+  static async discoverTokens(chainId: number, address: string): Promise<TrackedToken[]> {
+    const network = chainId === 43113 ? "testnet" : "mainnet"
+    const params = new URLSearchParams({
+      module: "account", action: "tokentx", address, sort: "desc", page: "1", offset: "1000",
+    })
+    const res = await fetch(`/api/proxy/routescan/v2/network/${network}/evm/${chainId}/etherscan/api?${params}`)
+    if (!res.ok) throw new Error(`Routescan request failed (HTTP ${res.status})`)
+    const body = await res.json() as { result: unknown }
+    // Etherscan-style APIs return an error string in `result` (e.g. rate limits)
+    if (!Array.isArray(body.result)) throw new Error(typeof body.result === "string" ? body.result : "Unexpected Routescan response")
+    const byAddress = new Map<string, TrackedToken>()
+    for (const tx of body.result as Record<string, string>[]) {
+      const key = tx.contractAddress?.toLowerCase()
+      if (!key || byAddress.has(key)) continue
+      byAddress.set(key, {
+        address: tx.contractAddress,
+        symbol: tx.tokenSymbol || "???",
+        name: tx.tokenName || "",
+        decimals: Number(tx.tokenDecimal) || 0,
+      })
+    }
+    return [...byAddress.values()]
+  }
+
   static async getGasPrice(rpcUrl: string) {
     const provider = CChainService.getProvider(rpcUrl)
     const [feeData, rawGasPrice] = await Promise.all([
@@ -151,6 +227,12 @@ export class CChainService {
       maxFeePerGas: feeData.maxFeePerGas?.toString(),
       maxPriorityFeePerGas: feeData.maxPriorityFeePerGas?.toString(),
     }
+  }
+
+  /** Latest block's baseFeePerGas, or null if the chain has no EIP-1559 base fee. */
+  static async getBaseFee(rpcUrl: string): Promise<bigint | null> {
+    const block = await CChainService.getProvider(rpcUrl).getBlock("latest")
+    return block?.baseFeePerGas ?? null
   }
 
   static async getBlockNumber(rpcUrl: string) {

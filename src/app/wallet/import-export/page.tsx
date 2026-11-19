@@ -2,12 +2,17 @@
 
 import { useState } from "react"
 import { Wallet } from "ethers/wallet"
+import { Download } from "lucide-react"
 import { ToolCard } from "@/components/tools/ToolCard"
 import { FormField } from "@/components/tools/FormField"
 import { LoadingButton } from "@/components/tools/LoadingButton"
 import { OutputDisplay } from "@/components/tools/OutputDisplay"
 import { SensitiveDisplay } from "@/components/tools/SensitiveDisplay"
 import { Card, CardContent } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { errorMessage } from "@/lib/utils"
 
 export default function ImportExportKeystorePage() {
   // Import state
@@ -21,6 +26,8 @@ export default function ImportExportKeystorePage() {
   // Export state
   const [exportPrivateKey, setExportPrivateKey] = useState("")
   const [exportPassword, setExportPassword] = useState("")
+  const [exportPasswordConfirm, setExportPasswordConfirm] = useState("")
+  const [exportedAddress, setExportedAddress] = useState("")
   const [exportedKeystore, setExportedKeystore] = useState("")
   const [exportLoading, setExportLoading] = useState(false)
   const [exportError, setExportError] = useState("")
@@ -49,11 +56,25 @@ export default function ImportExportKeystorePage() {
       setImportedPrivateKey(wallet.privateKey)
     } catch (err) {
       setImportError(
-        err instanceof Error ? err.message : "Failed to decrypt keystore. Check your JSON and password."
+        errorMessage(err, "Failed to decrypt keystore. Check your JSON and password.")
       )
     } finally {
       setImportLoading(false)
     }
+  }
+
+  async function handleFile(file: File | undefined) {
+    if (!file) return
+    setKeystoreJson(await file.text())
+  }
+
+  function handleDownload() {
+    const url = URL.createObjectURL(new Blob([exportedKeystore], { type: "application/json" }))
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `keystore-${exportedAddress}.json`
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   async function handleExport() {
@@ -71,15 +92,20 @@ export default function ImportExportKeystorePage() {
       setExportError("Please enter a password to encrypt the keystore.")
       return
     }
+    if (trimmedPassword !== exportPasswordConfirm) {
+      setExportError("Passwords do not match.")
+      return
+    }
 
     setExportLoading(true)
     try {
       const wallet = new Wallet(trimmedKey)
       const encrypted = await wallet.encrypt(trimmedPassword)
+      setExportedAddress(wallet.address)
       setExportedKeystore(JSON.stringify(JSON.parse(encrypted), null, 2))
     } catch (err) {
       setExportError(
-        err instanceof Error ? err.message : "Failed to create keystore. Check your private key."
+        errorMessage(err, "Failed to create keystore. Check your private key.")
       )
     } finally {
       setExportLoading(false)
@@ -102,31 +128,43 @@ export default function ImportExportKeystorePage() {
           <CardContent className="pt-6 space-y-4">
             <h2 className="text-base font-semibold">Import Keystore</h2>
             <p className="text-sm text-muted-foreground">
-              Paste a JSON keystore and enter its password to decrypt and reveal the address and private key.
+              Upload or paste a JSON keystore and enter its password to decrypt and reveal the address and private key.
             </p>
 
-            <FormField
-              label="Keystore JSON"
-              id="keystore-json"
-              value={keystoreJson}
-              onChange={setKeystoreJson}
-              placeholder='{"version":3,"id":"...","address":"...","crypto":{...}}'
-              type="textarea"
-              monospace
-            />
+            <form className="space-y-4" onSubmit={e => { e.preventDefault(); handleImport() }}>
+              <div className="space-y-2">
+                <Label htmlFor="keystore-file">Keystore File</Label>
+                <Input
+                  id="keystore-file"
+                  type="file"
+                  accept=".json,application/json"
+                  onChange={e => handleFile(e.target.files?.[0])}
+                />
+              </div>
 
-            <FormField
-              label="Password"
-              id="import-password"
-              value={importPassword}
-              onChange={setImportPassword}
-              placeholder="Enter keystore password"
-              type="password"
-            />
+              <FormField
+                label="Keystore JSON"
+                id="keystore-json"
+                value={keystoreJson}
+                onChange={setKeystoreJson}
+                placeholder='{"version":3,"id":"...","address":"...","crypto":{...}}'
+                type="textarea"
+                monospace
+              />
 
-            <LoadingButton loading={importLoading} onClick={handleImport}>
-              {importLoading ? "Decrypting..." : "Decrypt Keystore"}
-            </LoadingButton>
+              <FormField
+                label="Password"
+                id="import-password"
+                value={importPassword}
+                onChange={setImportPassword}
+                placeholder="Enter keystore password"
+                type="password"
+              />
+
+              <LoadingButton type="submit" loading={importLoading}>
+                {importLoading ? "Decrypting..." : "Decrypt Keystore"}
+              </LoadingButton>
+            </form>
 
             {importError && (
               <p className="text-destructive text-sm">{importError}</p>
@@ -149,35 +187,52 @@ export default function ImportExportKeystorePage() {
               Enter a private key and password to generate an encrypted JSON keystore file.
             </p>
 
-            <FormField
-              label="Private Key"
-              id="export-private-key"
-              value={exportPrivateKey}
-              onChange={setExportPrivateKey}
-              placeholder="0x..."
-              type="password"
-              monospace
-            />
+            <form className="space-y-4" onSubmit={e => { e.preventDefault(); handleExport() }}>
+              <FormField
+                label="Private Key"
+                id="export-private-key"
+                value={exportPrivateKey}
+                onChange={setExportPrivateKey}
+                placeholder="0x..."
+                type="password"
+                monospace
+              />
 
-            <FormField
-              label="Encryption Password"
-              id="export-password"
-              value={exportPassword}
-              onChange={setExportPassword}
-              placeholder="Choose a strong password"
-              type="password"
-            />
+              <FormField
+                label="Encryption Password"
+                id="export-password"
+                value={exportPassword}
+                onChange={setExportPassword}
+                placeholder="Choose a strong password"
+                type="password"
+              />
 
-            <LoadingButton loading={exportLoading} onClick={handleExport}>
-              {exportLoading ? "Encrypting..." : "Generate Keystore"}
-            </LoadingButton>
+              <FormField
+                label="Confirm Password"
+                id="export-password-confirm"
+                value={exportPasswordConfirm}
+                onChange={setExportPasswordConfirm}
+                placeholder="Repeat the password"
+                type="password"
+              />
+
+              <LoadingButton type="submit" loading={exportLoading}>
+                {exportLoading ? "Encrypting..." : "Generate Keystore"}
+              </LoadingButton>
+            </form>
 
             {exportError && (
               <p className="text-destructive text-sm">{exportError}</p>
             )}
 
             {exportedKeystore && (
-              <OutputDisplay label="Encrypted Keystore JSON" value={exportedKeystore} />
+              <div className="space-y-4">
+                <Button variant="outline" onClick={handleDownload}>
+                  <Download className="h-4 w-4 mr-2" />
+                  Download .json
+                </Button>
+                <OutputDisplay label="Encrypted Keystore JSON" value={exportedKeystore} />
+              </div>
             )}
           </CardContent>
         </Card>

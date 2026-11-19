@@ -1,14 +1,20 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { Suspense, useState, useCallback, useEffect } from "react"
+import Link from "next/link"
 import { useNetwork } from "@/lib/contexts/network-context"
 import { AvalancheService } from "@/lib/services/avalanche.service"
 import { useRawJson } from "@/lib/hooks/use-raw-json"
+import { useQueryParam } from "@/lib/hooks/use-query-param"
+import { useNow } from "@/lib/hooks/use-now"
+import { appLinks } from "@/lib/explorer-links"
 import { ToolCard } from "@/components/tools/ToolCard"
 import { FormField } from "@/components/tools/FormField"
 import { LoadingButton } from "@/components/tools/LoadingButton"
 import { DetailGrid } from "@/components/tools/DetailGrid"
 import { InfoTooltip } from "@/components/tools/InfoTooltip"
+import { CopyableId } from "@/components/tools/CopyableId"
+import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion"
@@ -16,22 +22,11 @@ import { AlertTriangle, CircleCheck, XCircle, Info, CheckCircle2 } from "lucide-
 
 import { TimeProgress } from "@/components/tools/TimeProgress"
 import type { Validator, PeerInfo, HealthResult } from "@/lib/models/avalanche"
+import { errorMessage, uptimeColor } from "@/lib/utils"
 
 interface Finding {
   severity: "ok" | "warning" | "critical" | "info"
   message: string
-}
-
-function getUptimeColor(uptimePercent: number): string {
-  if (uptimePercent > 80) return "text-green-500"
-  if (uptimePercent > 60) return "text-yellow-500"
-  return "text-red-500"
-}
-
-function getUptimeBarColor(uptimePercent: number): string {
-  if (uptimePercent > 80) return "bg-green-500"
-  if (uptimePercent > 60) return "bg-yellow-500"
-  return "bg-red-500"
 }
 
 function FindingIcon({ severity }: { severity: Finding["severity"] }) {
@@ -122,9 +117,10 @@ const recommendations = [
   "Query uptime from your own node to compare perspectives (switch network in dropdown)",
 ]
 
-export default function ValidatorStatusPage() {
+function ValidatorStatusPageInner() {
   const { network } = useNetwork()
-  const [nodeID, setNodeID] = useState("")
+  const [param, setParam] = useQueryParam("nodeId")
+  const [nodeID, setNodeID] = useState(param)
   const [validator, setValidator] = useState<Validator | null>(null)
   const [peerInfo, setPeerInfo] = useState<PeerInfo | null>(null)
   const [health, setHealth] = useState<HealthResult | null>(null)
@@ -132,9 +128,9 @@ export default function ValidatorStatusPage() {
   const [error, setError] = useState("")
   const [fetched, setFetched] = useState(false)
   const { rawJson, clearRaw, captureRaw } = useRawJson()
+  const now = useNow(60_000)
 
-  const handleLookup = useCallback(async () => {
-    if (!nodeID.trim()) return
+  const handleLookup = useCallback(async (id: string) => {
     setLoading(true)
     setError("")
     setValidator(null)
@@ -144,12 +140,13 @@ export default function ValidatorStatusPage() {
     clearRaw()
     try {
       const [validatorResult, peersResult, healthResult] = await Promise.allSettled([
-        AvalancheService.getValidatorByNodeID(network.baseUrl, nodeID.trim()),
+        AvalancheService.getValidatorByNodeID(network.baseUrl, id),
         AvalancheService.getPeers(network.baseUrl),
         AvalancheService.healthCheck(network.baseUrl),
       ])
 
-      const result = validatorResult.status === "fulfilled" ? validatorResult.value : null
+      if (validatorResult.status === "rejected") throw validatorResult.reason
+      const result = validatorResult.value
       if (!result) {
         setError("Validator not found for the given Node ID.")
         setFetched(true)
@@ -168,23 +165,38 @@ export default function ValidatorStatusPage() {
       captureRaw()
       setFetched(true)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to fetch validator data")
+      setError(errorMessage(err, "Failed to fetch validator data"))
       setFetched(true)
     } finally {
       setLoading(false)
     }
-  }, [network.baseUrl, nodeID, clearRaw, captureRaw])
+  }, [network.baseUrl, clearRaw, captureRaw])
+
+  // Deep links and back/forward: run whenever the URL param changes
+  useEffect(() => {
+    if (param && !network.plainRpc) Promise.resolve().then(() => handleLookup(param))
+  }, [param, handleLookup, network.plainRpc])
+
+  function handleSubmit() {
+    const id = nodeID.trim()
+    if (!id) return
+    if (id === param) handleLookup(id)
+    else setParam(id)
+  }
 
   const uptimePercent = validator?.uptime
     ? parseFloat(validator.uptime)
     : null
 
   let recoveryDays: number | null = null
+  let recoveryExceedsPeriod = false
   if (uptimePercent !== null && uptimePercent < 80 && validator?.startTime) {
     const uptimeRatio = uptimePercent / 100
-    const elapsed = Date.now() / 1000 - Number(validator.startTime)
+    const nowSec = now / 1000
+    const elapsed = nowSec - Number(validator.startTime)
     const recoverySeconds = elapsed * (0.8 - uptimeRatio) / 0.2
     recoveryDays = Math.ceil(recoverySeconds / 86400)
+    if (validator.endTime) recoveryExceedsPeriod = recoverySeconds > Number(validator.endTime) - nowSec
   }
 
   const findings = validator
@@ -197,8 +209,13 @@ export default function ValidatorStatusPage() {
       description="Check uptime, diagnose issues, and get actionable recommendations for your validator."
       rawJson={rawJson}
     >
+      {network.plainRpc ? (
+        <p className="text-sm text-muted-foreground">
+          Validator lookups are not supported on this network (plain RPC endpoint, C-Chain only).
+        </p>
+      ) : (
       <div className="space-y-6">
-        <div className="space-y-4">
+        <form className="space-y-4" onSubmit={e => { e.preventDefault(); handleSubmit() }}>
           <FormField
             label="Node ID"
             id="node-id"
@@ -207,10 +224,10 @@ export default function ValidatorStatusPage() {
             placeholder="NodeID-..."
             monospace
           />
-          <LoadingButton loading={loading} onClick={handleLookup}>
+          <LoadingButton type="submit" loading={loading}>
             Check Status
           </LoadingButton>
-        </div>
+        </form>
 
         {error && <p className="text-destructive text-sm">{error}</p>}
 
@@ -225,7 +242,7 @@ export default function ValidatorStatusPage() {
                 {
                   label: "Uptime",
                   value: uptimePercent !== null ? (
-                    <p className={`text-lg font-bold ${getUptimeColor(uptimePercent)}`}>
+                    <p className={`text-lg font-bold ${uptimeColor(uptimePercent)}`}>
                       {uptimePercent.toFixed(2)}%
                     </p>
                   ) : (
@@ -252,13 +269,20 @@ export default function ValidatorStatusPage() {
                 },
                 {
                   label: "Node ID",
-                  value: validator.nodeID,
-                  mono: true,
-                  copyable: true,
+                  value: <CopyableId value={validator.nodeID} explorer="validator" className="font-mono text-sm" />,
                   fullWidth: true,
                 },
               ]}
             />
+
+            <div className="flex flex-wrap gap-2">
+              <Button asChild variant="outline" size="sm">
+                <Link href={appLinks.validatorDashboard(validator.nodeID)}>Validator Dashboard</Link>
+              </Button>
+              <Button asChild variant="outline" size="sm">
+                <Link href={appLinks.delegators(validator.nodeID)}>Delegators</Link>
+              </Button>
+            </div>
 
             {/* Expandable diagnostics sections */}
             <Accordion type="multiple" defaultValue={["analysis", "connectivity", "findings", "recommendations"]}>
@@ -277,14 +301,14 @@ export default function ValidatorStatusPage() {
                         <div className="space-y-2">
                           <div className="flex items-baseline justify-between">
                             <p className="text-sm font-medium">Uptime</p>
-                            <p className={`text-sm font-semibold ${getUptimeColor(uptimePercent)}`}>
+                            <p className={`text-sm font-semibold ${uptimeColor(uptimePercent)}`}>
                               {uptimePercent.toFixed(2)}%
                             </p>
                           </div>
                           <div className="relative">
                             <div className="w-full h-3 bg-muted rounded-full overflow-hidden">
                               <div
-                                className={`h-full rounded-full transition-all ${getUptimeBarColor(uptimePercent)}`}
+                                className={`h-full rounded-full transition-all bg-current ${uptimeColor(uptimePercent)}`}
                                 style={{ width: `${Math.min(uptimePercent, 100)}%` }}
                               />
                             </div>
@@ -322,6 +346,11 @@ export default function ValidatorStatusPage() {
                                 Approximately <span className="font-semibold text-foreground">{recoveryDays} days</span> of
                                 continuous uptime needed to reach the 80% reward threshold.
                               </p>
+                              {recoveryExceedsPeriod && (
+                                <p className="text-xs text-destructive mt-1">
+                                  This exceeds the remaining validation period, so the threshold cannot be reached before it ends.
+                                </p>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -434,6 +463,16 @@ export default function ValidatorStatusPage() {
           </div>
         )}
       </div>
+      )}
     </ToolCard>
+  )
+}
+
+export default function ValidatorStatusPage() {
+  const { network } = useNetwork()
+  return (
+    <Suspense fallback={null}>
+      <ValidatorStatusPageInner key={network.id} />
+    </Suspense>
   )
 }

@@ -1,22 +1,28 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
 import { useNetwork } from "@/lib/contexts/network-context"
 import { AvalancheService } from "@/lib/services/avalanche.service"
 import { useRawJson } from "@/lib/hooks/use-raw-json"
 import { ToolCard } from "@/components/tools/ToolCard"
-import { LoadingButton } from "@/components/tools/LoadingButton"
 import { OutputDisplay } from "@/components/tools/OutputDisplay"
 import { SectionHeading } from "@/components/tools/SectionHeading"
 import { InfoCard } from "@/components/tools/InfoCard"
+import { RefreshControl } from "@/components/tools/RefreshControl"
+import { useInterval } from "@/lib/hooks/use-interval"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import type { HealthResult } from "@/lib/models/avalanche"
+import { errorMessage } from "@/lib/utils"
 
-export default function NodeHealthPage() {
+const REFRESH_MS = 15000
+
+function NodeHealthPageInner() {
   const { network } = useNetwork()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
+  const [updatedAt, setUpdatedAt] = useState<number | null>(null)
+  const [autoRefresh, setAutoRefresh] = useState(false)
   const [liveness, setLiveness] = useState<{ healthy: boolean } | null>(null)
   const [readiness, setReadiness] = useState<HealthResult | null>(null)
   const [fullHealth, setFullHealth] = useState<HealthResult | null>(null)
@@ -25,9 +31,6 @@ export default function NodeHealthPage() {
   const fetchHealth = useCallback(async () => {
     setLoading(true)
     setError("")
-    setLiveness(null)
-    setReadiness(null)
-    setFullHealth(null)
     clearRaw()
     try {
       const [livenessResult, readinessResult, healthResult] =
@@ -37,16 +40,10 @@ export default function NodeHealthPage() {
           AvalancheService.healthCheck(network.baseUrl),
         ])
 
-      if (livenessResult.status === "fulfilled") {
-        setLiveness(livenessResult.value)
-      }
-      if (readinessResult.status === "fulfilled") {
-        setReadiness(readinessResult.value)
-      }
-      if (healthResult.status === "fulfilled") {
-        setFullHealth(healthResult.value)
-      }
-
+      setLiveness(livenessResult.status === "fulfilled" ? livenessResult.value : null)
+      setReadiness(readinessResult.status === "fulfilled" ? readinessResult.value : null)
+      setFullHealth(healthResult.status === "fulfilled" ? healthResult.value : null)
+      setUpdatedAt(Date.now())
       captureRaw()
 
       if (
@@ -57,11 +54,30 @@ export default function NodeHealthPage() {
         setError("All health checks failed. The node may be unreachable or the Health API may not be available.")
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to fetch health data")
+      setError(errorMessage(err, "Failed to fetch health data"))
     } finally {
       setLoading(false)
     }
   }, [network.baseUrl, clearRaw, captureRaw])
+
+  useEffect(() => {
+    if (!network.plainRpc) Promise.resolve().then(fetchHealth)
+  }, [fetchHealth, network.plainRpc])
+
+  useInterval(() => { if (!loading) fetchHealth() }, autoRefresh && !network.plainRpc ? REFRESH_MS : null)
+
+  if (network.plainRpc) {
+    return (
+      <ToolCard
+        title="Node Health"
+        description="Check the health, readiness, and liveness status of the connected Avalanche node."
+      >
+        <p className="text-sm text-muted-foreground">
+          Not supported on this network (plain JSON-RPC endpoint).
+        </p>
+      </ToolCard>
+    )
+  }
 
   return (
     <ToolCard
@@ -70,11 +86,15 @@ export default function NodeHealthPage() {
       rawJson={rawJson}
     >
       <div className="space-y-6">
-        <LoadingButton loading={loading} onClick={fetchHealth}>
-          Run Health Checks
-        </LoadingButton>
+        <RefreshControl
+          updatedAt={updatedAt}
+          loading={loading}
+          onRefresh={fetchHealth}
+          autoRefresh={autoRefresh}
+          onAutoRefreshChange={setAutoRefresh}
+        />
 
-        {error && <p className="text-destructive text-sm">{error}</p>}
+        {error && <p className="text-destructive text-sm" role="alert">{error}</p>}
 
         {(liveness || readiness || fullHealth) && (
           <div className="space-y-6">
@@ -137,9 +157,9 @@ export default function NodeHealthPage() {
                 <SectionHeading title="Health Checks Detail" rpcMethod="health.health" />
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {Object.entries(fullHealth.checks).map(([name, check]) => {
+                    // health.health check entries: { message, timestamp, duration, contiguousFailures, timeOfFirstFailure, error? }
                     const checkObj = check as Record<string, unknown> | null
-                    const message = checkObj?.message as Record<string, unknown> | undefined
-                    const isHealthy = message?.["healthy"]
+                    const isHealthy = !checkObj?.error
                     return (
                       <Card key={name}>
                         <CardHeader className="pb-2">
@@ -147,11 +167,9 @@ export default function NodeHealthPage() {
                             <CardTitle className="text-sm font-medium text-muted-foreground truncate">
                               {name}
                             </CardTitle>
-                            {typeof isHealthy === "boolean" && (
-                              <Badge variant={isHealthy ? "default" : "destructive"} className="shrink-0 ml-2">
-                                {isHealthy ? "OK" : "Fail"}
-                              </Badge>
-                            )}
+                            <Badge variant={isHealthy ? "default" : "destructive"} className="shrink-0 ml-2">
+                              {isHealthy ? "OK" : "Fail"}
+                            </Badge>
                           </div>
                         </CardHeader>
                         <CardContent>
@@ -170,4 +188,10 @@ export default function NodeHealthPage() {
       </div>
     </ToolCard>
   )
+}
+
+export default function NodeHealthPage() {
+  const { network } = useNetwork()
+  // Remount on network switch so the previous network's results never linger.
+  return <NodeHealthPageInner key={network.id} />
 }

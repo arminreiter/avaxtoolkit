@@ -74,8 +74,8 @@ export interface Validator {
   delegationFee?: string
   /** Estimated reward in nAVAX if the validation completes successfully. */
   potentialReward?: string
-  /** Number of active delegators (may be provided as a pre-computed count). */
-  delegatorCount?: number
+  /** Number of active delegators; the RPC returns it as a numeric string (e.g. "1"). */
+  delegatorCount?: string
   /** Total weight/stake of all delegators in nAVAX. */
   delegatorWeight?: string
   /** Inline array of delegator entries. */
@@ -86,6 +86,13 @@ export interface Validator {
   delegationRewardOwner?: RewardOwner
   /** L1 (subnet) this validator belongs to, if not the primary network. */
   subnetID?: string
+  /** ACP-77 L1 validator fields (present for L1 validators converted via ConvertSubnetToL1Tx). */
+  validationID?: string
+  /** Remaining L1 validator balance in nAVAX (pays the continuous fee). */
+  balance?: string
+  minNonce?: string
+  remainingBalanceOwner?: RewardOwner
+  deactivationOwner?: RewardOwner
 }
 
 // ---------------------------------------------------------------------------
@@ -100,6 +107,19 @@ export interface Subnet {
   controlKeys: string[]
   /** Signature threshold required among control keys. */
   threshold: number
+}
+
+/** Response shape for `platform.getSubnet`. */
+export interface SubnetInfo {
+  isPermissioned: boolean
+  controlKeys: string[]
+  threshold: string
+  locktime: string
+  subnetTransformationTxID: string
+  /** Set once the subnet has been converted to an L1 (ACP-77). */
+  conversionID: string
+  managerChainID: string
+  managerAddress: string | null
 }
 
 // ---------------------------------------------------------------------------

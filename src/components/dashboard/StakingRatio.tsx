@@ -17,9 +17,10 @@ function asciiBar(pct: number, width: number = 20): string {
 interface StakingRatioProps {
   staked?: string | null
   supply?: string | null
+  refreshKey?: number
 }
 
-export function StakingRatio({ staked: propStaked, supply: propSupply }: StakingRatioProps) {
+export function StakingRatio({ staked: propStaked, supply: propSupply, refreshKey = 0 }: StakingRatioProps) {
   const { network } = useNetwork()
   const [fetchedStaked, setFetchedStaked] = useState<string | null>(null)
   const [fetchedSupply, setFetchedSupply] = useState<string | null>(null)
@@ -41,7 +42,7 @@ export function StakingRatio({ staked: propStaked, supply: propSupply }: Staking
     }
     fetchData()
     return () => { cancelled = true }
-  }, [network.baseUrl, propStaked, propSupply])
+  }, [network.baseUrl, propStaked, propSupply, refreshKey])
 
   // Prefer props, fall back to self-fetched
   const staked = propStaked ?? fetchedStaked

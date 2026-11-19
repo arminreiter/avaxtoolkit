@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { Suspense, useState, useCallback, useEffect } from "react"
 import dynamic from "next/dynamic"
 import { isAddress } from "ethers/address"
 import { useNetwork } from "@/lib/contexts/network-context"
@@ -10,6 +10,9 @@ import { FormField } from "@/components/tools/FormField"
 import { LoadingButton } from "@/components/tools/LoadingButton"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { AlertTriangle } from "lucide-react"
+import { errorMessage } from "@/lib/utils"
+import { useQueryParam } from "@/lib/hooks/use-query-param"
+import { CopyableId } from "@/components/tools/CopyableId"
 const VerificationStatus = dynamic(() => import("@/components/contracts/VerificationStatus").then(m => ({ default: m.VerificationStatus })))
 const VerificationInstructions = dynamic(() => import("@/components/contracts/VerificationInstructions").then(m => ({ default: m.VerificationInstructions })))
 
@@ -17,28 +20,43 @@ const SourceViewer = dynamic(() => import("@/components/contracts/SourceViewer")
 const ContractRead = dynamic(() => import("@/components/contracts/ContractRead").then(m => ({ default: m.ContractRead })), { ssr: false })
 const ContractWrite = dynamic(() => import("@/components/contracts/ContractWrite").then(m => ({ default: m.ContractWrite })), { ssr: false })
 
-export default function ContractVerificationPage() {
+function ContractVerificationPageInner() {
   const { network, endpoints } = useNetwork()
-  const [address, setAddress] = useState("")
+  const [param, setParam] = useQueryParam("address")
+  const [address, setAddress] = useState(param)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const [data, setData] = useState<AggregatedVerification | null>(null)
+  const [tab, setTab] = useState("status")
 
-  async function handleCheck() {
+  const check = useCallback(async (addr: string) => {
     setLoading(true)
     setError("")
     setData(null)
+    setTab("status")
     try {
-      const addr = address.trim()
-      if (!addr) throw new Error("Please enter a contract address")
-      if (!isAddress(addr)) throw new Error("Invalid address format")
       const result = await VerificationService.checkAll(addr, network.chainId, endpoints.cChain)
       setData(result)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to check verification")
+      setError(errorMessage(err, "Failed to check verification"))
     } finally {
       setLoading(false)
     }
+  }, [network.chainId, endpoints.cChain])
+
+  // Deep links and back/forward: run whenever the URL param changes
+  useEffect(() => {
+    if (param && isAddress(param)) Promise.resolve().then(() => check(param))
+  }, [param, check])
+
+  function handleSubmit() {
+    const addr = address.trim()
+    if (!isAddress(addr)) {
+      setError(addr ? "Invalid address format" : "Please enter a contract address")
+      return
+    }
+    if (addr === param) check(addr)
+    else setParam(addr)
   }
 
   // Re-check verification status after a successful cross-verify
@@ -71,7 +89,7 @@ export default function ContractVerificationPage() {
         </div>
       ) : (
       <div className="space-y-6">
-        <div className="flex gap-3 items-end">
+        <form className="flex gap-3 items-end" onSubmit={e => { e.preventDefault(); handleSubmit() }}>
           <div className="flex-1">
             <FormField
               label="Contract Address"
@@ -82,15 +100,22 @@ export default function ContractVerificationPage() {
               monospace
             />
           </div>
-          <LoadingButton loading={loading} onClick={handleCheck}>
+          <LoadingButton loading={loading} type="submit">
             Check Verification
           </LoadingButton>
-        </div>
+        </form>
 
         {error && <p className="text-destructive text-sm">{error}</p>}
 
+        {data && (
+          <div className="text-sm">
+            <span className="text-muted-foreground">Contract: </span>
+            <CopyableId value={data.address} explorer="address" className="font-mono" />
+          </div>
+        )}
+
         {(data || loading) && (
-          <Tabs defaultValue="status">
+          <Tabs value={tab} onValueChange={setTab}>
             <TabsList>
               <TabsTrigger value="status">Status</TabsTrigger>
               <TabsTrigger value="source" disabled={!anyVerified}>Source</TabsTrigger>
@@ -110,7 +135,12 @@ export default function ContractVerificationPage() {
             </TabsContent>
 
             <TabsContent value="source" className="mt-4">
-              <SourceViewer source={data?.source ?? null} />
+              <SourceViewer
+                source={data?.source ?? null}
+                abi={data?.abi}
+                address={data?.address}
+                contractName={data?.results.find(r => r.contractName)?.contractName}
+              />
             </TabsContent>
 
             <TabsContent value="read" className="mt-4">
@@ -162,4 +192,9 @@ export default function ContractVerificationPage() {
       )}
     </ToolCard>
   )
+}
+
+export default function ContractVerificationPage() {
+  const { network } = useNetwork()
+  return <Suspense fallback={null}><ContractVerificationPageInner key={network.id} /></Suspense>
 }

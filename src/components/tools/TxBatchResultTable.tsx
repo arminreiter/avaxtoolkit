@@ -1,6 +1,8 @@
 "use client"
 
 import { truncateId } from "@/lib/utils"
+import { appLinks } from "@/lib/explorer-links"
+import { CopyableId } from "@/components/tools/CopyableId"
 
 export interface TxBatchResult {
   address: string
@@ -28,7 +30,7 @@ export function TxBatchResultTable({ results, addressLabel = "Address", showAmou
   if (results.length === 0) return null
 
   return (
-    <div className="border rounded-lg overflow-hidden">
+    <div className="border rounded-lg overflow-x-auto">
       <table className="w-full text-xs font-mono">
         <thead>
           <tr className="border-b bg-muted/50">
@@ -41,14 +43,20 @@ export function TxBatchResultTable({ results, addressLabel = "Address", showAmou
         <tbody>
           {results.map((r, i) => (
             <tr key={i} className="border-b last:border-0">
-              <td className="p-2">{truncateId(r.address, 8, 4)}</td>
-              <td className="p-2">{r.amount}{showAmountUnit ? ` ${showAmountUnit}` : ""}</td>
+              <td className="p-2 whitespace-nowrap">
+                <CopyableId value={r.address} display={truncateId(r.address, 8, 4)} explorer="address" />
+              </td>
+              <td className="p-2 whitespace-nowrap">{r.amount}{showAmountUnit ? ` ${showAmountUnit}` : ""}</td>
               <td className="p-2">
                 <span className={STATUS_COLORS[r.status] ?? "text-muted-foreground"}>
                   {r.status}
                 </span>
               </td>
-              <td className="p-2">{r.hash ? truncateId(r.hash, 8, 4) : r.error || "—"}</td>
+              <td className="p-2 max-w-xs break-words">
+                {r.hash ? (
+                  <CopyableId value={r.hash} display={truncateId(r.hash, 8, 4)} href={appLinks.tx(r.hash)} explorer="tx" />
+                ) : r.error || "—"}
+              </td>
             </tr>
           ))}
         </tbody>

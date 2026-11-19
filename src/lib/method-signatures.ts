@@ -1,8 +1,10 @@
+import { decodeCalldata, type DecodedArg } from "@/lib/utils/abi";
+
 /**
  * Common 4-byte EVM function selectors mapped to human-readable names.
  * Used by the block explorer to display method names for transactions.
  */
-export const SIGNATURES: Record<string, string> = {
+const SIGNATURES: Record<string, string> = {
   // ERC-20
   "0xa9059cbb": "transfer",
   "0x23b872dd": "transferFrom",
@@ -74,4 +76,28 @@ export function decodeMethodName(input: string | null | undefined): string {
 
   const selector = input.slice(0, 10).toLowerCase();
   return SIGNATURES[selector] ?? selector;
+}
+
+// ponytail: full signatures only for the most common selectors; unknown ones fall back to raw hex
+const FULL_SIGNATURES: Record<string, string> = {
+  "0xa9059cbb": "transfer(address to, uint256 amount)",
+  "0x23b872dd": "transferFrom(address from, address to, uint256 amount)",
+  "0x095ea7b3": "approve(address spender, uint256 amount)",
+  "0x2e1a7d4d": "withdraw(uint256 amount)",
+  "0x42842e0e": "safeTransferFrom(address from, address to, uint256 tokenId)",
+  "0xa22cb465": "setApprovalForAll(address operator, bool approved)",
+  "0xa694fc3a": "stake(uint256 amount)",
+  "0x2e17de78": "unstake(uint256 amount)",
+  "0x3659cfe6": "upgradeTo(address newImplementation)",
+};
+
+/** Decode call arguments for well-known selectors; null if unknown or undecodable. */
+export function decodeKnownArgs(input: string | null | undefined): DecodedArg[] | null {
+  const sig = input && FULL_SIGNATURES[input.slice(0, 10).toLowerCase()];
+  if (!sig) return null;
+  try {
+    return decodeCalldata(sig, input).args;
+  } catch {
+    return null;
+  }
 }

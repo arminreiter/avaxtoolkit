@@ -51,8 +51,15 @@ export function isValidNetwork(n: unknown): n is Network {
   const obj = n as Record<string, unknown>
   return typeof obj.id === "string" && typeof obj.name === "string" &&
     typeof obj.baseUrl === "string" && typeof obj.chainId === "number" &&
-    (obj.type === undefined || obj.type === "mainnet" || obj.type === "testnet" || obj.type === "local" || obj.type === "custom") &&
+    (obj.type === "mainnet" || obj.type === "fuji" || obj.type === "localhost" || obj.type === "custom") &&
     isValidUrl(obj.baseUrl)
+}
+
+const HRP: Record<NetworkType, string> = { mainnet: "avax", fuji: "fuji", localhost: "local", custom: "custom" }
+
+/** Bech32 HRP used for P-/X-Chain addresses on this network. */
+export function hrpForNetwork(network: Network): string {
+  return HRP[network.type]
 }
 
 export const DEFAULT_NETWORKS: Network[] = [

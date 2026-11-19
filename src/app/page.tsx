@@ -8,6 +8,8 @@ import { StatCard } from "@/components/dashboard/StatCard"
 import { NetworkHealth } from "@/components/dashboard/NetworkHealth"
 import { StakingRatio } from "@/components/dashboard/StakingRatio"
 import { RecentBlocks } from "@/components/dashboard/RecentBlocks"
+import { RefreshControl } from "@/components/tools/RefreshControl"
+import { useInterval } from "@/lib/hooks/use-interval"
 import { Shield, Coins, Fuel, Network, Mountain, ArrowDown, ArrowUp, Weight, Clock } from "lucide-react"
 import { nAvaxToAvax } from "@/lib/utils"
 
@@ -17,6 +19,8 @@ const STAT_KEYS = [
 ] as const
 
 type StatKey = (typeof STAT_KEYS)[number]
+
+const AUTO_REFRESH_MS = 15_000
 
 const DEFAULTS: Record<StatKey, string> = {
   validatorCount: "\u2014",
@@ -34,10 +38,32 @@ function DashboardContent() {
   const { network, endpoints } = useNetwork()
   const [values, setValues] = useState<Record<StatKey, string>>(DEFAULTS)
   const [loadingSet, setLoadingSet] = useState<Set<StatKey>>(() => new Set(STAT_KEYS))
+  const [errors, setErrors] = useState<Partial<Record<StatKey, string>>>({})
   const [stakingData, setStakingData] = useState<{ staked: string | null; supply: string | null }>({ staked: null, supply: null })
+  const [refreshKey, setRefreshKey] = useState(0)
+  const [refreshing, setRefreshing] = useState(true)
+  const [updatedAt, setUpdatedAt] = useState<number | null>(null)
+  const [autoRefresh, setAutoRefresh] = useState(true)
+
+  const refresh = useCallback(() => {
+    setRefreshing(true)
+    setRefreshKey(k => k + 1)
+  }, [])
+
+  useInterval(() => { if (!refreshing) refresh() }, autoRefresh ? AUTO_REFRESH_MS : null)
 
   const setVal = useCallback((key: StatKey, value: string) => {
     setValues(prev => ({ ...prev, [key]: value }))
+    setErrors(prev => {
+      if (!(key in prev)) return prev
+      const next = { ...prev }
+      delete next[key]
+      return next
+    })
+  }, [])
+
+  const setError = useCallback((key: StatKey, err: unknown) => {
+    setErrors(prev => ({ ...prev, [key]: err instanceof Error ? err.message : String(err) }))
   }, [])
 
   const setDone = useCallback((key: StatKey) => {
@@ -51,11 +77,13 @@ function DashboardContent() {
   useEffect(() => {
     let cancelled = false
 
+    const pending: Promise<unknown>[] = []
+
     function fetchStat(key: StatKey, fetcher: () => Promise<string>) {
-      fetcher()
+      pending.push(fetcher()
         .then(v => { if (!cancelled) setVal(key, v) })
-        .catch(() => {})
-        .finally(() => { if (!cancelled) setDone(key) })
+        .catch(err => { if (!cancelled) setError(key, err) })
+        .finally(() => { if (!cancelled) setDone(key) }))
     }
 
     fetchStat("supply", async () => {
@@ -91,7 +119,7 @@ function DashboardContent() {
     })
 
     // Single call for both min stakes (async-parallel: avoid duplicate requests)
-    AvalancheService.getMinStake(network.baseUrl)
+    pending.push(AvalancheService.getMinStake(network.baseUrl)
       .then(result => {
         if (cancelled) return
         setVal("minValidatorStake", `${nAvaxToAvax(result.minValidatorStake, 0)} AVAX`)
@@ -99,12 +127,14 @@ function DashboardContent() {
         setVal("minDelegatorStake", `${nAvaxToAvax(result.minDelegatorStake, 0)} AVAX`)
         setDone("minDelegatorStake")
       })
-      .catch(() => {
+      .catch(err => {
         if (!cancelled) {
+          setError("minValidatorStake", err)
           setDone("minValidatorStake")
+          setError("minDelegatorStake", err)
           setDone("minDelegatorStake")
         }
-      })
+      }))
 
     // Defer the heavy getValidators call (huge payload) so lighter RPCs
     // grab connections first and aren't queued behind it.
@@ -113,10 +143,15 @@ function DashboardContent() {
         const validators = await AvalancheService.getValidators(network.baseUrl)
         return validators.length.toLocaleString()
       })
+      Promise.allSettled(pending).then(() => {
+        if (cancelled) return
+        setRefreshing(false)
+        setUpdatedAt(Date.now())
+      })
     }, 50)
 
     return () => { cancelled = true; clearTimeout(timer) }
-  }, [network.baseUrl, endpoints.cChain, setVal, setDone])
+  }, [network.baseUrl, endpoints.cChain, setVal, setDone, setError, refreshKey])
 
   return (
     <div className="space-y-5">
@@ -126,6 +161,15 @@ function DashboardContent() {
           <span className="text-primary font-mono text-sm select-none">$</span>
           <h1 className="text-2xl font-bold font-display tracking-wider uppercase">Dashboard</h1>
           <span className="cursor-blink text-primary text-lg leading-none">_</span>
+          <div className="ml-auto">
+            <RefreshControl
+              updatedAt={updatedAt}
+              loading={refreshing}
+              onRefresh={refresh}
+              autoRefresh={autoRefresh}
+              onAutoRefreshChange={setAutoRefresh}
+            />
+          </div>
         </div>
         <p className="text-xs text-muted-foreground mt-1 font-mono pl-5">
           <span className="text-muted-foreground/40">{"//"} </span>
@@ -147,6 +191,8 @@ function DashboardContent() {
             value={values.validatorCount}
             icon={Shield}
             loading={loadingSet.has("validatorCount")}
+            error={errors.validatorCount}
+            href="/validators"
             rpcInfo="platform.getCurrentValidators"
             iconColor="red"
             delay={50}
@@ -156,6 +202,7 @@ function DashboardContent() {
             value={values.supply}
             icon={Coins}
             loading={loadingSet.has("supply")}
+            error={errors.supply}
             rpcInfo="platform.getCurrentSupply"
             iconColor="amber"
             delay={100}
@@ -165,6 +212,8 @@ function DashboardContent() {
             value={values.gasPrice}
             icon={Fuel}
             loading={loadingSet.has("gasPrice")}
+            error={errors.gasPrice}
+            href="/c-chain/gas"
             rpcInfo="eth_feeData"
             iconColor="cyan"
             delay={150}
@@ -174,6 +223,8 @@ function DashboardContent() {
             value={values.l1Count}
             icon={Network}
             loading={loadingSet.has("l1Count")}
+            error={errors.l1Count}
+            href="/l1s"
             rpcInfo="platform.getSubnets"
             iconColor="purple"
             delay={200}
@@ -189,6 +240,7 @@ function DashboardContent() {
             value={values.height}
             icon={Mountain}
             loading={loadingSet.has("height")}
+            error={errors.height}
             rpcInfo="platform.getHeight"
             delay={250}
           />
@@ -197,6 +249,8 @@ function DashboardContent() {
             value={values.totalStake}
             icon={Weight}
             loading={loadingSet.has("totalStake")}
+            error={errors.totalStake}
+            href="/validators"
             rpcInfo="platform.getTotalStake"
             delay={300}
           />
@@ -205,6 +259,7 @@ function DashboardContent() {
             value={values.timestamp}
             icon={Clock}
             loading={loadingSet.has("timestamp")}
+            error={errors.timestamp}
             rpcInfo="platform.getTimestamp"
             delay={350}
           />
@@ -213,6 +268,8 @@ function DashboardContent() {
             value={values.minValidatorStake}
             icon={ArrowUp}
             loading={loadingSet.has("minValidatorStake")}
+            error={errors.minValidatorStake}
+            href="/validators"
             rpcInfo="platform.getMinStake"
             delay={400}
           />
@@ -221,6 +278,8 @@ function DashboardContent() {
             value={values.minDelegatorStake}
             icon={ArrowDown}
             loading={loadingSet.has("minDelegatorStake")}
+            error={errors.minDelegatorStake}
+            href="/validators"
             rpcInfo="platform.getMinStake"
             delay={450}
           />
@@ -237,10 +296,10 @@ function DashboardContent() {
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           <div className="space-y-3">
-            <NetworkHealth />
-            <StakingRatio staked={stakingData.staked} supply={stakingData.supply} />
+            <NetworkHealth refreshKey={refreshKey} />
+            <StakingRatio staked={stakingData.staked} supply={stakingData.supply} refreshKey={refreshKey} />
           </div>
-          <RecentBlocks />
+          <RecentBlocks refreshKey={refreshKey} />
         </div>
       </div>
     </div>
@@ -249,7 +308,7 @@ function DashboardContent() {
 
 export default function DashboardPage() {
   const { network, endpoints } = useNetwork()
-  const networkKey = `${network.baseUrl}|${endpoints.cChain}`
+  const networkKey = `${network.id}|${network.baseUrl}|${endpoints.cChain}`
 
   // Use key to auto-reset all state when network changes (instead of setState-during-render)
   return <DashboardContent key={networkKey} />

@@ -1,74 +1,71 @@
 "use client"
 
 import { useState, useEffect, useRef, useMemo, useCallback } from "react"
-import { Download, FileCode } from "lucide-react"
+import { useTheme } from "next-themes"
+import { Braces, Check, Copy, Download, FileCode } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import type { ContractSource } from "@/lib/services/verification"
-import type { Highlighter } from "shiki"
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
+import { useCopyToClipboard } from "@/lib/hooks/use-copy-to-clipboard"
+import type { ABIEntry, ContractSource } from "@/lib/services/verification"
+import type { HighlighterCore } from "shiki/core"
 
 interface SourceViewerProps {
   source: ContractSource | null
+  /** ABI to show in the "ABI" view; falls back to source.abi. */
+  abi?: ABIEntry[] | null
+  /** Used to name the downloaded zip. */
+  contractName?: string
+  address?: string
 }
 
-export function SourceViewer({ source }: SourceViewerProps) {
+const ABI_KEY = "\0abi"
+
+export function SourceViewer({ source, abi, contractName, address }: SourceViewerProps) {
   const fileNames = useMemo(() => source ? Object.keys(source.files) : [], [source])
-  const [selectedFile, setSelectedFile] = useState<string>(fileNames[0] ?? "")
-  const prevSourceRef = useRef(source)
-  if (prevSourceRef.current !== source) {
-    prevSourceRef.current = source
-    setSelectedFile(fileNames[0] ?? "")
-  }
-  const [highlightedHtml, setHighlightedHtml] = useState<string>("")
-  const highlighterRef = useRef<Highlighter | null>(null)
+  const abiEntries = abi ?? source?.abi
+  const [selected, setSelected] = useState("")
+  // Derived so a new source falls back to its first file without a reset effect
+  const selectedFile = (selected === ABI_KEY && abiEntries?.length) || (source && selected in source.files)
+    ? selected
+    : fileNames[0] ?? ""
+  const isAbi = selectedFile === ABI_KEY
+  const content = isAbi ? JSON.stringify(abiEntries, null, 2) : source?.files[selectedFile] ?? ""
+
+  const { resolvedTheme } = useTheme()
+  const theme = resolvedTheme === "light" ? "github-light" : "github-dark"
+  const [highlighter, setHighlighter] = useState<HighlighterCore | null>(null)
   const codeContainerRef = useRef<HTMLDivElement>(null)
+  const { copied, copy } = useCopyToClipboard()
 
   // Initialize shiki highlighter once
   useEffect(() => {
     let cancelled = false
 
     async function init() {
-      if (highlighterRef.current) return
-      const { createHighlighter } = await import("shiki")
-      const hl = await createHighlighter({
-        themes: ["github-dark"],
-        langs: ["solidity"],
+      // Fine-grained imports: only the Solidity grammar + two themes get bundled,
+      // and the JS regex engine avoids shipping the Oniguruma WASM.
+      const [{ createHighlighterCore }, { createJavaScriptRegexEngine }] = await Promise.all([
+        import("shiki/core"),
+        import("shiki/engine/javascript"),
+      ])
+      const hl = await createHighlighterCore({
+        themes: [import("shiki/themes/github-dark.mjs"), import("shiki/themes/github-light.mjs")],
+        langs: [import("shiki/langs/solidity.mjs")],
+        engine: createJavaScriptRegexEngine(),
       })
-      if (!cancelled) {
-        highlighterRef.current = hl
-        // Trigger a re-highlight if we already have a selected file
-        if (selectedFile && source?.files[selectedFile]) {
-          const html = hl.codeToHtml(source.files[selectedFile], {
-            lang: "solidity",
-            theme: "github-dark",
-          })
-          setHighlightedHtml(html)
-        }
-      }
+      if (!cancelled) setHighlighter(hl)
     }
 
     init()
     return () => {
       cancelled = true
     }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [])
 
-  // Highlight on file change
-  useEffect(() => {
-    if (!source || !selectedFile || !source.files[selectedFile]) {
-      setHighlightedHtml("")
-      return
-    }
-
-    const hl = highlighterRef.current
-    if (!hl) return
-
-    const html = hl.codeToHtml(source.files[selectedFile], {
-      lang: "solidity",
-      theme: "github-dark",
-    })
-    setHighlightedHtml(html)
-  }, [selectedFile, source])
+  const highlightedHtml = useMemo(
+    () => highlighter && !isAbi && content ? highlighter.codeToHtml(content, { lang: "solidity", theme }) : "",
+    [highlighter, isAbi, content, theme],
+  )
 
   // Sanitize shiki output: only allow pre, code, span tags with style/class attributes.
   // This provides defense-in-depth against supply chain or API-driven XSS.
@@ -129,12 +126,12 @@ export function SourceViewer({ source }: SourceViewerProps) {
     const url = URL.createObjectURL(blob)
     const a = document.createElement("a")
     a.href = url
-    a.download = "source.zip"
+    a.download = `${contractName || address || "contract"}-source.zip`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
-  }, [source])
+  }, [source, contractName, address])
 
   if (!source) {
     return (
@@ -144,6 +141,26 @@ export function SourceViewer({ source }: SourceViewerProps) {
       </div>
     )
   }
+
+  const fileButton = (key: string, label: string, title: string, Icon: typeof FileCode) => (
+    <button
+      key={key}
+      type="button"
+      onClick={() => setSelected(key)}
+      aria-current={selectedFile === key ? "true" : undefined}
+      className={`w-full text-left px-3 py-2 rounded-md text-sm font-mono truncate transition-colors ${
+        selectedFile === key
+          ? "bg-accent text-accent-foreground"
+          : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+      }`}
+      title={title}
+    >
+      <Icon className="inline-block h-3.5 w-3.5 mr-2 shrink-0" />
+      {label}
+    </button>
+  )
+
+  const currentLabel = isAbi ? "ABI" : selectedFile.split("/").pop()
 
   return (
     <div className="space-y-4">
@@ -155,38 +172,44 @@ export function SourceViewer({ source }: SourceViewerProps) {
         </Button>
       </div>
 
-      {/* Two-column layout: file list + source viewer */}
-      <div className="flex gap-4 rounded-lg border">
+      {/* File list + source viewer: stacked on mobile, two columns from md */}
+      <div className="flex flex-col md:flex-row rounded-lg border">
         {/* File list */}
-        <div className="w-1/4 min-w-[180px] border-r">
-          <ScrollArea className="h-[500px]">
+        <div className="w-full md:w-1/4 md:min-w-[180px] border-b md:border-b-0 md:border-r">
+          <ScrollArea className="h-40 md:h-[500px]">
             <div className="p-2 space-y-0.5">
-              {fileNames.map((name) => (
-                <button
-                  key={name}
-                  onClick={() => setSelectedFile(name)}
-                  className={`w-full text-left px-3 py-2 rounded-md text-sm font-mono truncate transition-colors ${
-                    selectedFile === name
-                      ? "bg-accent text-accent-foreground"
-                      : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
-                  }`}
-                  title={name}
-                >
-                  <FileCode className="inline-block h-3.5 w-3.5 mr-2 shrink-0" />
-                  {name.split("/").pop()}
-                </button>
-              ))}
+              {fileNames.map((name) => fileButton(name, name.split("/").pop() ?? name, name, FileCode))}
+              {abiEntries?.length ? fileButton(ABI_KEY, "ABI", "Contract ABI (JSON)", Braces) : null}
             </div>
           </ScrollArea>
         </div>
 
         {/* Source code viewer */}
-        <div className="flex-1 overflow-x-auto">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between gap-2 border-b px-4 py-1.5">
+            <span className="truncate font-mono text-xs text-muted-foreground" title={isAbi ? undefined : selectedFile}>
+              {currentLabel}
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => copy(content)}
+              aria-label={`Copy ${currentLabel}`}
+              title={`Copy ${currentLabel}`}
+            >
+              {copied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
+            </Button>
+          </div>
           <ScrollArea className="h-[500px]">
-            <div
-              ref={codeContainerRef}
-              className="bg-muted/50 rounded-lg p-4 text-sm [&_pre]:!bg-transparent [&_pre]:!p-0 [&_code]:text-sm"
-            />
+            {isAbi ? (
+              <pre className="bg-muted/50 p-4 text-sm font-mono w-max min-w-full">{content}</pre>
+            ) : (
+              <div
+                ref={codeContainerRef}
+                className="bg-muted/50 p-4 text-sm w-max min-w-full [&_pre]:!bg-transparent [&_pre]:!p-0 [&_code]:text-sm [&_code]:[counter-reset:line] [&_.line]:before:[counter-increment:line] [&_.line]:before:content-[counter(line)] [&_.line]:before:inline-block [&_.line]:before:w-8 [&_.line]:before:mr-4 [&_.line]:before:text-right [&_.line]:before:text-muted-foreground/50 [&_.line]:before:select-none"
+              />
+            )}
+            <ScrollBar orientation="horizontal" />
           </ScrollArea>
         </div>
       </div>

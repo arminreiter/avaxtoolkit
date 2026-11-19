@@ -1,5 +1,7 @@
 "use client"
 
+import { useState } from "react"
+import { usePathname } from "next/navigation"
 import { Menu } from "lucide-react"
 import Image from "next/image"
 import logoIcon from "@/app/icon.svg"
@@ -68,6 +70,16 @@ function SidebarContent() {
 }
 
 export function Sidebar() {
+  const pathname = usePathname()
+  const [mobileOpen, setMobileOpen] = useState(false)
+
+  // Close the mobile sheet after navigating (setState-during-render, as in NavItem)
+  const [prevPathname, setPrevPathname] = useState(pathname)
+  if (prevPathname !== pathname) {
+    setPrevPathname(pathname)
+    setMobileOpen(false)
+  }
+
   return (
     <>
       {/* Desktop sidebar */}
@@ -77,9 +89,9 @@ export function Sidebar() {
 
       {/* Mobile header bar + sheet */}
       <div className="md:hidden fixed top-0 left-0 right-0 z-40 bg-sidebar border-b border-border px-4 py-3 flex items-center gap-3">
-        <Sheet>
+        <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
           <SheetTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-8 w-8">
+            <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Open navigation">
               <Menu className="h-4 w-4" />
             </Button>
           </SheetTrigger>

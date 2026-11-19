@@ -2,6 +2,7 @@
 
 /docs/plans/
 /.playwright-mcp/
+/reviews/
 
 # dependencies
 /node_modules

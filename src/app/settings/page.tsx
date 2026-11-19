@@ -5,18 +5,19 @@ import { useNetwork } from "@/lib/contexts/network-context"
 import { useWallet } from "@/lib/contexts/wallet-context"
 import { RpcService } from "@/lib/services/rpc.service"
 import { DEFAULT_NETWORKS, isValidNetwork, type Network } from "@/lib/models/network"
-import { WALLET_STORAGE_KEY, ACTIVE_WALLET_STORAGE_KEY, type StoredWallet } from "@/lib/models/wallet"
 import { getEtherscanApiKey, setEtherscanApiKey } from "@/lib/services/verification/api-keys"
 import { encryptConfig, decryptConfig, isValidConfigFile, isEncryptedConfigFile, createPlainConfig, type ConfigPayload, type ConfigFile } from "@/lib/services/config-crypto"
 import { ToolCard } from "@/components/tools/ToolCard"
 import { FormField } from "@/components/tools/FormField"
 import { LoadingButton } from "@/components/tools/LoadingButton"
+import { useConfirm } from "@/components/tools/ConfirmDialog"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { Label } from "@/components/ui/label"
-import { Trash2, FlaskConical, Download, Upload, AlertTriangle } from "lucide-react"
+import { Trash2, Pencil, FlaskConical, Download, Upload, AlertTriangle } from "lucide-react"
+import { errorMessage } from "@/lib/utils"
 
 function isValidRpcUrl(url: string): boolean {
   try {
@@ -33,10 +34,13 @@ export default function SettingsPage() {
     setNetwork,
     customNetworks,
     addCustomNetwork,
+    updateCustomNetwork,
     removeCustomNetwork,
+    replaceCustomNetworks,
     allNetworks,
   } = useNetwork()
-  const { wallets } = useWallet()
+  const { confirm, dialog } = useConfirm()
+  const { wallets, activeWallet, importWallets } = useWallet()
 
   const [name, setName] = useState("")
   const [baseUrl, setBaseUrl] = useState("")
@@ -47,6 +51,7 @@ export default function SettingsPage() {
   const [testResult, setTestResult] = useState<boolean | null>(null)
   const [adding, setAdding] = useState(false)
   const [plainRpc, setPlainRpc] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
 
   // Etherscan API key
   const [etherscanKey, setEtherscanKey] = useState("")
@@ -72,6 +77,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     const saved = getEtherscanApiKey()
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate client-only localStorage state after mount to avoid SSR mismatch
     if (saved) setEtherscanKey(saved)
   }, [])
 
@@ -136,7 +142,7 @@ export default function SettingsPage() {
       return
     }
 
-    const id = `custom-${trimmedName.toLowerCase().replace(/\s+/g, "-")}-${Date.now()}`
+    const id = editingId ?? `custom-${trimmedName.toLowerCase().replace(/\s+/g, "-")}-${Date.now()}`
     const newNetwork: Network = {
       id,
       name: trimmedName,
@@ -147,21 +153,42 @@ export default function SettingsPage() {
     }
 
     setAdding(true)
-    addCustomNetwork(newNetwork)
-    setAddSuccess(`Network "${trimmedName}" added successfully.`)
+    if (editingId) {
+      updateCustomNetwork(newNetwork)
+      setAddSuccess(`Network "${trimmedName}" updated.`)
+    } else {
+      addCustomNetwork(newNetwork)
+      setAddSuccess(`Network "${trimmedName}" added successfully.`)
+    }
+    resetForm()
+    setAdding(false)
+  }
+
+  function resetForm() {
+    setEditingId(null)
     setName("")
     setBaseUrl("")
     setChainId("")
     setPlainRpc(false)
     setTestResult(null)
-    setAdding(false)
   }
 
-  function handleRemoveCustomNetwork(id: string) {
-    if (activeNetwork.id === id) {
-      setNetwork(DEFAULT_NETWORKS[0])
-    }
-    removeCustomNetwork(id)
+  function handleEditCustomNetwork(net: Network) {
+    setEditingId(net.id)
+    setName(net.name)
+    setBaseUrl(net.baseUrl)
+    setChainId(String(net.chainId))
+    setPlainRpc(!!net.plainRpc)
+    setTestResult(null)
+    setAddError("")
+    setAddSuccess("")
+    document.getElementById("network-name")?.scrollIntoView({ behavior: "smooth", block: "center" })
+  }
+
+  async function handleRemoveCustomNetwork(net: Network) {
+    if (!(await confirm({ title: `Delete network "${net.name}"?`, description: "This removes the custom network from this browser.", confirmLabel: "Delete", destructive: true }))) return
+    if (editingId === net.id) resetForm()
+    removeCustomNetwork(net.id) // falls back to Mainnet if it was active
   }
 
   async function handleExport() {
@@ -186,21 +213,11 @@ export default function SettingsPage() {
 
     setExporting(true)
     try {
-      let storedWallets: StoredWallet[] = []
-      let activeWalletId: string | null = null
-      if (includesWallets) {
-        try {
-          const raw = localStorage.getItem(WALLET_STORAGE_KEY)
-          if (raw) storedWallets = JSON.parse(raw)
-          activeWalletId = localStorage.getItem(ACTIVE_WALLET_STORAGE_KEY)
-        } catch { /* noop */ }
-      }
-
       const payload: ConfigPayload = {
         customNetworks,
         activeNetworkId: activeNetwork.id,
         etherscanApiKey: getEtherscanApiKey() ?? null,
-        ...(includesWallets && { wallets: storedWallets, activeWalletId }),
+        ...(includesWallets && { wallets, activeWalletId: activeWallet?.id ?? null }),
       }
 
       const configFile = hasPassword
@@ -218,7 +235,7 @@ export default function SettingsPage() {
       setExportPassword("")
       setExportPasswordConfirm("")
     } catch (err) {
-      setExportError(err instanceof Error ? err.message : "Export failed.")
+      setExportError(errorMessage(err, "Export failed."))
     } finally {
       setExporting(false)
     }
@@ -264,27 +281,37 @@ export default function SettingsPage() {
       return
     }
 
+    if (importMode === "replace" && !(await confirm({
+      title: "Replace all settings?",
+      description: importFile.includesWallets
+        ? "Your custom networks, Etherscan API key and wallets will be overwritten by the backup."
+        : "Your custom networks and Etherscan API key will be overwritten by the backup.",
+      confirmLabel: "Replace",
+      destructive: true,
+    }))) return
+
     setImporting(true)
     try {
       const payload = isEncrypted
         ? await decryptConfig(importFile, importPassword)
         : importFile.payload
 
+      // Validate imported networks; skip invalid ones and ids that collide with defaults/existing/earlier entries
+      const taken = new Set([...DEFAULT_NETWORKS, ...(importMode === "merge" ? customNetworks : [])].map(n => n.id))
+      const imported: Network[] = []
+      let invalid = 0
+      let duplicate = 0
+      for (const net of payload.customNetworks) {
+        if (!isValidNetwork(net)) invalid++
+        else if (taken.has(net.id)) duplicate++
+        else { taken.add(net.id); imported.push(net) }
+      }
+
       if (importMode === "replace") {
-        // Clear all custom networks
-        for (const net of customNetworks) {
-          removeCustomNetwork(net.id)
-        }
-        // Add imported networks
-        for (const net of payload.customNetworks) {
-          if (isValidNetwork(net)) {
-            addCustomNetwork(net)
-          }
-        }
+        replaceCustomNetworks(imported)
         // Set active network
         if (payload.activeNetworkId) {
-          const allNets = [...DEFAULT_NETWORKS, ...payload.customNetworks]
-          const found = allNets.find(n => n.id === payload.activeNetworkId)
+          const found = [...DEFAULT_NETWORKS, ...imported].find(n => n.id === payload.activeNetworkId)
           if (found) setNetwork(found)
         }
         // Etherscan key
@@ -292,24 +319,11 @@ export default function SettingsPage() {
         setEtherscanKey(payload.etherscanApiKey ?? "")
         // Wallets
         if (importFile.includesWallets && payload.wallets) {
-          localStorage.setItem(WALLET_STORAGE_KEY, JSON.stringify(payload.wallets))
-          if (payload.activeWalletId) {
-            localStorage.setItem(ACTIVE_WALLET_STORAGE_KEY, payload.activeWalletId)
-          } else {
-            localStorage.removeItem(ACTIVE_WALLET_STORAGE_KEY)
-          }
-          setImportSuccess("Import complete. Reloading to apply wallet changes...")
-          setTimeout(() => window.location.reload(), 1000)
-          return
+          importWallets(payload.wallets, "replace", payload.activeWalletId)
         }
       } else {
-        // Merge mode
-        const existingIds = new Set(customNetworks.map(n => n.id))
-        for (const net of payload.customNetworks) {
-          if (!existingIds.has(net.id) && isValidNetwork(net)) {
-            addCustomNetwork(net)
-          }
-        }
+        // Merge mode (one write; addCustomNetwork in a loop would drop all but the last)
+        replaceCustomNetworks([...customNetworks, ...imported])
         // Etherscan key: only if currently empty
         if (!getEtherscanApiKey() && payload.etherscanApiKey) {
           setEtherscanApiKey(payload.etherscanApiKey)
@@ -317,29 +331,20 @@ export default function SettingsPage() {
         }
         // Wallets: add if address not present (case-insensitive)
         if (importFile.includesWallets && payload.wallets) {
-          const existingAddresses = new Set(wallets.map(w => w.address.toLowerCase()))
-          const newWallets = payload.wallets.filter(
-            w => !existingAddresses.has(w.address.toLowerCase())
-          )
-          if (newWallets.length > 0) {
-            try {
-              const raw = localStorage.getItem(WALLET_STORAGE_KEY)
-              const current: StoredWallet[] = raw ? JSON.parse(raw) : []
-              localStorage.setItem(WALLET_STORAGE_KEY, JSON.stringify([...current, ...newWallets]))
-              setImportSuccess("Import complete. Reloading to apply wallet changes...")
-              setTimeout(() => window.location.reload(), 1000)
-              return
-            } catch { /* noop */ }
-          }
+          importWallets(payload.wallets, "merge")
         }
       }
 
-      setImportSuccess("Configuration imported successfully.")
+      const skipped = [
+        invalid && `${invalid} network${invalid === 1 ? "" : "s"} skipped (invalid)`,
+        duplicate && `${duplicate} network${duplicate === 1 ? "" : "s"} skipped (already exists)`,
+      ].filter(Boolean).join(", ")
+      setImportSuccess(`Configuration imported successfully.${skipped ? ` ${skipped}.` : ""}`)
       setImportPassword("")
       setImportFile(null)
       setImportFileName("")
     } catch (err) {
-      setImportError(err instanceof Error ? err.message : "Import failed.")
+      setImportError(errorMessage(err, "Import failed."))
       setImportPassword("")
     } finally {
       setImporting(false)
@@ -431,7 +436,18 @@ export default function SettingsPage() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => handleRemoveCustomNetwork(net.id)}
+                        onClick={() => handleEditCustomNetwork(net)}
+                        aria-label="Edit network"
+                        title="Edit network"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleRemoveCustomNetwork(net)}
+                        aria-label="Delete network"
+                        title="Delete network"
                         className="text-destructive hover:text-destructive"
                       >
                         <Trash2 className="h-4 w-4" />
@@ -488,8 +504,11 @@ export default function SettingsPage() {
         <Separator />
 
         {/* Add Custom Network */}
-        <div className="space-y-4">
-          <h2 className="text-base font-semibold">Add Custom Network</h2>
+        <form
+          className="space-y-4"
+          onSubmit={(e) => { e.preventDefault(); handleAddNetwork() }}
+        >
+          <h2 className="text-base font-semibold">{editingId ? "Edit Custom Network" : "Add Custom Network"}</h2>
 
           <FormField
             label="Network Name"
@@ -534,6 +553,7 @@ export default function SettingsPage() {
 
           <div className="flex flex-wrap items-center gap-3">
             <LoadingButton
+              type="button"
               variant="outline"
               loading={testing}
               onClick={handleTestConnection}
@@ -553,9 +573,16 @@ export default function SettingsPage() {
             )}
           </div>
 
-          <LoadingButton loading={adding} onClick={handleAddNetwork}>
-            Add Network
-          </LoadingButton>
+          <div className="flex flex-wrap items-center gap-3">
+            <LoadingButton type="submit" loading={adding}>
+              {editingId ? "Save Changes" : "Add Network"}
+            </LoadingButton>
+            {editingId && (
+              <Button type="button" variant="outline" onClick={resetForm}>
+                Cancel
+              </Button>
+            )}
+          </div>
 
           {addError && (
             <p className="text-destructive text-sm">{addError}</p>
@@ -564,7 +591,7 @@ export default function SettingsPage() {
           {addSuccess && (
             <p className="text-sm text-green-600 dark:text-green-400">{addSuccess}</p>
           )}
-        </div>
+        </form>
 
         <Separator />
 
@@ -794,6 +821,7 @@ export default function SettingsPage() {
           </div>
         </div>
       </div>
+      {dialog}
     </ToolCard>
   )
 }

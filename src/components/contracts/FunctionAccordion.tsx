@@ -11,6 +11,9 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { LoadingButton } from "@/components/tools/LoadingButton"
 import type { ABIEntry } from "@/lib/services/verification"
+import { errorMessage } from "@/lib/utils"
+import { useCopyToClipboard } from "@/lib/hooks/use-copy-to-clipboard"
+import { Check, Copy } from "lucide-react"
 
 const MAX_ERROR_LENGTH = 300
 
@@ -19,9 +22,16 @@ function truncateError(msg: string): string {
   return msg.slice(0, MAX_ERROR_LENGTH) + "..."
 }
 
+/** `text` is what gets copied; `node` (if set) is what gets rendered. */
+export interface CallResult {
+  text: string
+  node?: React.ReactNode
+}
+
 interface FunctionAccordionProps {
   entry: ABIEntry
-  onCall: (args: string[]) => Promise<string>
+  /** `value` is the AVAX amount for payable functions ("" otherwise); `onProgress` shows interim results. */
+  onCall: (args: string[], value: string, onProgress: (r: CallResult) => void) => Promise<CallResult>
   disabled?: boolean
   accordionValue?: string
   className?: string
@@ -40,43 +50,47 @@ export function FunctionAccordion({
 }: FunctionAccordionProps) {
   const inputs = useMemo(() => entry.inputs ?? [], [entry.inputs])
   const [args, setArgs] = useState<string[]>(() => inputs.map(() => ""))
+  const [value, setValue] = useState("")
   const [loading, setLoading] = useState(false)
-
-  const prevInputsLength = useRef(inputs.length)
-  useEffect(() => {
-    if (inputs.length !== prevInputsLength.current) {
-      prevInputsLength.current = inputs.length
-      setArgs(inputs.map(() => ""))
-      setResult("")
-      setError("")
-    }
-  }, [inputs.length, inputs])
-  const [result, setResult] = useState("")
+  const [result, setResult] = useState<CallResult | null>(null)
   const [error, setError] = useState("")
+  const { copied, copy } = useCopyToClipboard()
 
-  // Store onCall in a ref to avoid re-triggering effects when the callback identity changes
-  const onCallRef = useRef(onCall)
-  onCallRef.current = onCall
+  const [prevInputs, setPrevInputs] = useState(inputs)
+  if (inputs !== prevInputs) {
+    setPrevInputs(inputs)
+    setArgs(inputs.map(() => ""))
+    setResult(null)
+    setError("")
+  }
+
+  const run = useCallback(async (callArgs: string[], callValue: string) => {
+    setLoading(true)
+    setResult(null)
+    setError("")
+    try {
+      setResult(await onCall(callArgs, callValue, setResult))
+    } catch (err) {
+      setError(truncateError(errorMessage(err, String(err))))
+    } finally {
+      setLoading(false)
+    }
+  }, [onCall])
 
   // Auto-execute on first expand for zero-arg read functions
   const autoExecuted = useRef(false)
   useEffect(() => {
-    if (autoExecute && expanded && !autoExecuted.current && inputs.length === 0 && !loading) {
+    if (autoExecute && expanded && !autoExecuted.current && inputs.length === 0) {
       autoExecuted.current = true
-      setLoading(true)
-      setResult("")
-      setError("")
-      onCallRef.current([])
-        .then(res => setResult(res))
-        .catch(err => setError(truncateError(err instanceof Error ? err.message : String(err))))
-        .finally(() => setLoading(false))
+      Promise.resolve().then(() => run([], ""))
     }
-  }, [autoExecute, expanded, inputs.length, loading])
+  }, [autoExecute, expanded, inputs.length, run])
 
   const functionName = entry.name ?? "constructor"
   const signature = `${functionName}(${inputs.map((p) => `${p.type} ${p.name}`).join(", ")})`
   const isReadOnly =
     entry.stateMutability === "view" || entry.stateMutability === "pure"
+  const isPayable = entry.stateMutability === "payable"
 
   const handleArg = useCallback(
     (index: number, value: string) => {
@@ -88,21 +102,6 @@ export function FunctionAccordion({
     },
     []
   )
-
-  const handleCall = useCallback(async () => {
-    setLoading(true)
-    setResult("")
-    setError("")
-    try {
-      const res = await onCallRef.current(args)
-      setResult(res)
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      setError(truncateError(msg))
-    } finally {
-      setLoading(false)
-    }
-  }, [args])
 
   return (
     <AccordionItem value={accordionValue ?? functionName} className={className}>
@@ -134,11 +133,27 @@ export function FunctionAccordion({
             </div>
           ))}
 
+          {isPayable && (
+            <div className="space-y-2">
+              <Label htmlFor={`${functionName}-value`} className="font-mono text-sm">
+                Value (AVAX)
+              </Label>
+              <Input
+                id={`${functionName}-value`}
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                placeholder="0.0"
+                inputMode="decimal"
+                className="font-mono"
+              />
+            </div>
+          )}
+
           {/* Call button */}
           <LoadingButton
             loading={loading}
             disabled={disabled}
-            onClick={handleCall}
+            onClick={() => run(args, value)}
             size="sm"
           >
             {isReadOnly ? (autoExecute ? "Refresh" : "Query") : "Write"}
@@ -146,9 +161,18 @@ export function FunctionAccordion({
 
           {/* Result display */}
           {result && (
-            <pre className="bg-muted rounded-lg p-3 text-sm font-mono whitespace-pre-wrap break-all">
-              {result}
-            </pre>
+            <div className="relative bg-muted rounded-lg p-3 pr-10 text-sm font-mono whitespace-pre-wrap break-all">
+              {result.node ?? result.text}
+              <button
+                type="button"
+                onClick={() => copy(result.text)}
+                className="absolute top-2 right-2 text-muted-foreground/50 hover:text-muted-foreground transition-colors cursor-pointer"
+                title="Copy result"
+                aria-label="Copy result"
+              >
+                {copied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
+              </button>
+            </div>
           )}
 
           {/* Error display */}

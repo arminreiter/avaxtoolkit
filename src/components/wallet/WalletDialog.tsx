@@ -1,9 +1,9 @@
 "use client"
 
-import { useState, useMemo, useEffect, useRef } from "react"
-import { HDNodeWallet, Wallet as EthersWallet, Mnemonic } from "ethers/wallet"
-import { randomBytes } from "ethers/crypto"
-import { BrowserProvider } from "ethers/providers"
+import { useState, useMemo, useEffect } from "react"
+import { HDNodeWallet, Wallet as EthersWallet } from "ethers/wallet"
+import { getAddress } from "ethers/address"
+import { type DerivedAddress, DEFAULT_DERIVATION_BASE, deriveAddresses, generateMnemonic } from "@/lib/utils/wallet"
 import { Wallet, Plus, Download, Link, Trash2, Check, Pencil, ChevronDown, ChevronRight, GitBranch, FlaskConical, Eye, EyeOff } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
@@ -15,13 +15,30 @@ import { Badge } from "@/components/ui/badge"
 import { useWallet } from "@/lib/contexts/wallet-context"
 import { useNetwork } from "@/lib/contexts/network-context"
 import type { StoredWallet } from "@/lib/models/wallet"
-import { truncateId } from "@/lib/utils"
+import { truncateId, errorMessage, formatAvaxWei } from "@/lib/utils"
+import { CChainService } from "@/lib/services/cchain.service"
+import { CopyableId } from "@/components/tools/CopyableId"
+import { SensitiveDisplay } from "@/components/tools/SensitiveDisplay"
+import { useConfirm } from "@/components/tools/ConfirmDialog"
 
 export function WalletDialog() {
   const { wallets, activeWallet, setActiveWallet, addWallet, removeWallet, renameWallet,
     isWalletDialogOpen, closeWalletDialog } = useWallet()
 
-  const existingAddresses = useMemo(() => wallets.map(w => w.address.toLowerCase()), [wallets])
+  const existingAddresses = useMemo(() => new Set(wallets.map(w => w.address.toLowerCase())), [wallets])
+  const [tab, setTab] = useState("wallets")
+  const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null)
+
+  // Adds the wallets not already stored (by address), then jumps to the list with a summary.
+  function addMany(list: StoredWallet[]) {
+    const fresh = list.filter(w => !existingAddresses.has(w.address.toLowerCase()))
+    fresh.forEach(addWallet)
+    const dupes = list.length - fresh.length
+    setNotice(fresh.length === 0
+      ? { text: list.length > 1 ? "Wallets already exist" : "Wallet already exists", error: true }
+      : { text: `Added ${fresh.length} wallet${fresh.length !== 1 ? "s" : ""}${dupes ? ` (${dupes} already existed)` : ""}`, error: false })
+    setTab("wallets")
+  }
 
   return (
     <Dialog open={isWalletDialogOpen} onOpenChange={(open) => { if (!open) closeWalletDialog() }}>
@@ -36,7 +53,7 @@ export function WalletDialog() {
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs defaultValue="wallets" className="flex-1 min-h-0 flex flex-col">
+        <Tabs value={tab} onValueChange={v => { setTab(v); setNotice(null) }} className="flex-1 min-h-0 flex flex-col">
           <TabsList className="w-full justify-start shrink-0">
             <TabsTrigger value="wallets" className="gap-1.5">
               <Wallet className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Wallets</span>
@@ -56,30 +73,36 @@ export function WalletDialog() {
           </TabsList>
 
           <TabsContent value="wallets" className="mt-4 flex-1 min-h-0 overflow-y-auto">
+            {notice && (
+              <p role="status" className={`mb-3 rounded-lg border p-2 text-xs ${notice.error ? "border-destructive/30 bg-destructive/5 text-destructive" : "border-green-500/30 bg-green-500/5 text-green-500"}`}>
+                {notice.text}
+              </p>
+            )}
             <WalletListTab
               wallets={wallets}
               activeWallet={activeWallet}
               onSelect={setActiveWallet}
               onRemove={removeWallet}
               onRename={renameWallet}
-              onAdd={addWallet}
+              onAdd={addMany}
+              existingAddresses={existingAddresses}
             />
           </TabsContent>
 
           <TabsContent value="generate" className="mt-4 flex-1 min-h-0 overflow-y-auto">
-            <GenerateTab onAdd={addWallet} />
+            <GenerateTab onAdd={addMany} />
           </TabsContent>
 
           <TabsContent value="import" className="mt-4 flex-1 min-h-0 overflow-y-auto">
-            <ImportTab onAdd={addWallet} />
+            <ImportTab onAdd={addMany} existingAddresses={existingAddresses} />
           </TabsContent>
 
           <TabsContent value="connect" className="mt-4 flex-1 min-h-0 overflow-y-auto">
-            <ConnectTab onAdd={addWallet} wallets={wallets} />
+            <ConnectTab onAdd={addMany} wallets={wallets} />
           </TabsContent>
 
           <TabsContent value="devtools" className="mt-4 flex-1 min-h-0 overflow-y-auto">
-            <DevWalletsTab onAdd={addWallet} existingAddresses={existingAddresses} />
+            <DevWalletsTab onAdd={addMany} existingAddresses={existingAddresses} />
           </TabsContent>
         </Tabs>
       </DialogContent>
@@ -89,27 +112,12 @@ export function WalletDialog() {
 
 /* ─── Derive Selector (shared by Generate & Import) ─────────────────── */
 
-interface DerivedAddress {
-  index: number
-  address: string
-  privateKey: string
-  path: string
-}
-
-function deriveAddresses(mnemonic: string, basePath: string, count: number): DerivedAddress[] {
-  const results: DerivedAddress[] = []
-  for (let i = 0; i < count; i++) {
-    const path = `${basePath}${i}`
-    const wallet = HDNodeWallet.fromPhrase(mnemonic, undefined, path)
-    results.push({ index: i, address: wallet.address, privateKey: wallet.privateKey, path })
-  }
-  return results
-}
-
-function DeriveSelector({ mnemonic, onSelect, basePath = "m/44'/60'/0'/0/" }: {
+function DeriveSelector({ mnemonic, onSelect, basePath = DEFAULT_DERIVATION_BASE, existingAddresses }: {
   mnemonic: string
   onSelect: (derived: DerivedAddress[]) => void
   basePath?: string
+  /** Lowercased addresses already stored; shown as added and not selectable. */
+  existingAddresses?: Set<string>
 }) {
   const [count, setCount] = useState(5)
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set([0]))
@@ -118,12 +126,14 @@ function DeriveSelector({ mnemonic, onSelect, basePath = "m/44'/60'/0'/0/" }: {
     () => deriveAddresses(mnemonic, basePath, count),
     [mnemonic, basePath, count]
   )
+  const isAdded = (d: DerivedAddress) => existingAddresses?.has(d.address.toLowerCase()) ?? false
+  const selectable = derived.filter(d => !isAdded(d))
+  const selected = selectable.filter(d => selectedIndices.has(d.index))
 
   // Sync selection to parent via effect (avoids setState-during-render)
   useEffect(() => {
-    const selected = derived.filter(d => selectedIndices.has(d.index))
-    onSelect(selected)
-  }, [selectedIndices, derived, onSelect])
+    onSelect(derived.filter(d => selectedIndices.has(d.index) && !existingAddresses?.has(d.address.toLowerCase())))
+  }, [selectedIndices, derived, onSelect, existingAddresses])
 
   function toggleIndex(index: number) {
     setSelectedIndices(prev => {
@@ -138,11 +148,11 @@ function DeriveSelector({ mnemonic, onSelect, basePath = "m/44'/60'/0'/0/" }: {
   }
 
   function toggleAll() {
-    const allSelected = derived.every(d => selectedIndices.has(d.index))
+    const allSelected = selectable.every(d => selectedIndices.has(d.index))
     if (allSelected) {
       setSelectedIndices(new Set())
     } else {
-      setSelectedIndices(new Set(derived.map(d => d.index)))
+      setSelectedIndices(new Set(selectable.map(d => d.index)))
     }
   }
 
@@ -160,14 +170,21 @@ function DeriveSelector({ mnemonic, onSelect, basePath = "m/44'/60'/0'/0/" }: {
           <GitBranch className="h-3 w-3" /> Select Derived Addresses
         </Label>
         <div className="flex items-center gap-2">
-          <button onClick={toggleAll} className="text-[10px] text-primary hover:underline">
-            {derived.every(d => selectedIndices.has(d.index)) ? "Deselect all" : "Select all"}
+          <button type="button" onClick={toggleAll} className="text-[10px] text-primary hover:underline">
+            {selectable.every(d => selectedIndices.has(d.index)) ? "Deselect all" : "Select all"}
           </button>
           <span className="text-[10px] text-muted-foreground font-mono hidden sm:inline">{basePath}</span>
         </div>
       </div>
       <div className="border rounded-lg divide-y max-h-48 overflow-y-auto">
-        {derived.map(d => (
+        {derived.map(d => isAdded(d) ? (
+          <div key={d.index} className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground opacity-60">
+            <span className="w-3 shrink-0" />
+            <span className="font-mono w-6 shrink-0">#{d.index}</span>
+            <span className="font-mono truncate">{d.address}</span>
+            <Badge variant="outline" className="ml-auto text-[10px] shrink-0">added</Badge>
+          </div>
+        ) : (
           <div
             key={d.index}
             className={`flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors text-xs ${
@@ -187,10 +204,10 @@ function DeriveSelector({ mnemonic, onSelect, basePath = "m/44'/60'/0'/0/" }: {
           </div>
         ))}
       </div>
-      {selectedIndices.size > 0 && (
-        <p className="text-[10px] text-muted-foreground">{selectedIndices.size} address{selectedIndices.size !== 1 ? "es" : ""} selected</p>
+      {selected.length > 0 && (
+        <p className="text-[10px] text-muted-foreground">{selected.length} address{selected.length !== 1 ? "es" : ""} selected</p>
       )}
-      <Button variant="ghost" size="sm" className="w-full text-xs gap-1" onClick={() => setCount(c => c + 5)}>
+      <Button type="button" variant="ghost" size="sm" className="w-full text-xs gap-1" onClick={() => setCount(c => c + 5)}>
         <ChevronDown className="h-3 w-3" /> Show more
       </Button>
     </div>
@@ -246,20 +263,56 @@ function groupWallets(wallets: StoredWallet[]): WalletGroup[] {
   return groups
 }
 
-function WalletListTab({ wallets, activeWallet, onSelect, onRemove, onRename, onAdd }: {
+function WalletListTab({ wallets, activeWallet, onSelect, onRemove, onRename, onAdd, existingAddresses }: {
   wallets: StoredWallet[]
   activeWallet: StoredWallet | null
   onSelect: (id: string) => void
   onRemove: (id: string) => void
   onRename: (id: string, name: string) => void
-  onAdd: (w: StoredWallet) => void
+  onAdd: (ws: StoredWallet[]) => void
+  existingAddresses: Set<string>
 }) {
+  const { endpoints } = useNetwork()
+  const { confirm, dialog } = useConfirm()
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editName, setEditName] = useState("")
   const [derivingId, setDerivingId] = useState<string | null>(null)
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
+  const [balances, setBalances] = useState<{ rpc: string; byAddress: Record<string, string> }>({ rpc: "", byAddress: {} })
 
   const groups = useMemo(() => groupWallets(wallets), [wallets])
+
+  // C-Chain AVAX balance per row; failures just leave that row without a balance.
+  useEffect(() => {
+    let cancelled = false
+    const rpc = endpoints.cChain
+    const addresses = [...existingAddresses]
+    Promise.allSettled(addresses.map(a => CChainService.getBalance(rpc, a))).then(results => {
+      if (cancelled) return
+      const byAddress: Record<string, string> = {}
+      results.forEach((r, i) => { if (r.status === "fulfilled") byAddress[addresses[i]] = formatAvaxWei(BigInt(r.value.wei)) })
+      setBalances({ rpc, byAddress })
+    })
+    return () => { cancelled = true }
+  }, [existingAddresses, endpoints.cChain])
+
+  function commitRename(id: string) {
+    const trimmed = editName.trim()
+    if (trimmed) onRename(id, trimmed)
+    setEditingId(null)
+  }
+
+  async function handleRemove(w: StoredWallet) {
+    const ok = await confirm({
+      title: `Delete "${w.name}"?`,
+      description: w.type === "connected"
+        ? "The wallet will be removed from this list. Your browser extension is not affected."
+        : "Its private key (and seed phrase) will be permanently lost unless you have exported or backed it up.",
+      confirmLabel: "Delete",
+      destructive: true,
+    })
+    if (ok) onRemove(w.id)
+  }
 
   if (wallets.length === 0) {
     return (
@@ -299,6 +352,8 @@ function WalletListTab({ wallets, activeWallet, onSelect, onRemove, onRename, on
               className="shrink-0 p-0.5 -ml-1 rounded hover:bg-muted/80 transition-colors mt-0.5 sm:mt-0"
               onClick={e => { e.stopPropagation(); toggleCollapse(opts.groupKey!) }}
               title={opts.collapsed ? "Expand" : "Collapse"}
+              aria-label={opts.collapsed ? "Expand" : "Collapse"}
+              aria-expanded={!opts.collapsed}
             >
               {opts.collapsed ? (
                 <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
@@ -317,11 +372,11 @@ function WalletListTab({ wallets, activeWallet, onSelect, onRemove, onRename, on
                   className="h-7 text-sm"
                   autoFocus
                   onKeyDown={e => {
-                    if (e.key === "Enter") { onRename(w.id, editName); setEditingId(null) }
+                    if (e.key === "Enter") commitRename(w.id)
                     if (e.key === "Escape") setEditingId(null)
                   }}
                 />
-                <Button size="xs" onClick={() => { onRename(w.id, editName); setEditingId(null) }}>
+                <Button size="xs" onClick={() => commitRename(w.id)} disabled={!editName.trim()}>
                   Save
                 </Button>
               </div>
@@ -341,9 +396,12 @@ function WalletListTab({ wallets, activeWallet, onSelect, onRemove, onRename, on
                     <span className="text-[10px] text-muted-foreground">+{opts.childCount} more</span>
                   ) : null}
                 </div>
-                <p className="text-xs font-mono text-muted-foreground mt-0.5 truncate">
-                  {truncateId(w.address, 10, 6)}
-                </p>
+                <div className="flex items-center gap-2 text-xs font-mono text-muted-foreground mt-0.5">
+                  <CopyableId value={w.address} display={truncateId(w.address, 10, 6)} explorer="address" />
+                  {balances.rpc === endpoints.cChain && balances.byAddress[w.address.toLowerCase()] !== undefined && (
+                    <span className="ml-auto shrink-0">{balances.byAddress[w.address.toLowerCase()]} AVAX</span>
+                  )}
+                </div>
               </>
             )}
           </div>
@@ -352,6 +410,7 @@ function WalletListTab({ wallets, activeWallet, onSelect, onRemove, onRename, on
               <Button
                 variant="ghost" size="icon" className="h-7 w-7"
                 title="Derive another address"
+                aria-label="Derive another address"
                 onClick={() => setDerivingId(isDeriving ? null : w.id)}
               >
                 <GitBranch className="h-3.5 w-3.5" />
@@ -359,20 +418,22 @@ function WalletListTab({ wallets, activeWallet, onSelect, onRemove, onRename, on
             )}
             <Button
               variant="ghost" size="icon" className="h-7 w-7"
+              title="Rename" aria-label="Rename wallet"
               onClick={() => { setEditingId(w.id); setEditName(w.name) }}
             >
               <Pencil className="h-3.5 w-3.5" />
             </Button>
             <Button
               variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive"
-              onClick={() => onRemove(w.id)}
+              title="Delete" aria-label="Delete wallet"
+              onClick={() => handleRemove(w)}
             >
               <Trash2 className="h-3.5 w-3.5" />
             </Button>
           </div>
         </div>
         {isDeriving && !opts.indented && w.mnemonic && (
-          <DeriveInlineAdd wallet={w} onAdd={onAdd} onDone={() => setDerivingId(null)} />
+          <DeriveInlineAdd wallet={w} onAdd={onAdd} onDone={() => setDerivingId(null)} existingAddresses={existingAddresses} />
         )}
       </div>
     )
@@ -380,6 +441,7 @@ function WalletListTab({ wallets, activeWallet, onSelect, onRemove, onRename, on
 
   return (
     <div className="space-y-2">
+      {dialog}
       {groups.map((group) => {
         if (group.kind === "standalone") {
           return renderWalletRow(group.wallet, { showDerive: false, indented: false })
@@ -405,32 +467,31 @@ function WalletListTab({ wallets, activeWallet, onSelect, onRemove, onRename, on
   )
 }
 
-function DeriveInlineAdd({ wallet: w, onAdd, onDone }: {
+function DeriveInlineAdd({ wallet: w, onAdd, onDone, existingAddresses }: {
   wallet: StoredWallet
-  onAdd: (w: StoredWallet) => void
+  onAdd: (ws: StoredWallet[]) => void
   onDone: () => void
+  existingAddresses: Set<string>
 }) {
   const [selected, setSelected] = useState<DerivedAddress[]>([])
 
   function handleAdd() {
-    for (const d of selected) {
-      onAdd({
-        id: crypto.randomUUID(),
-        name: `${w.name} #${d.index}`,
-        type: "mnemonic",
-        address: d.address,
-        privateKey: d.privateKey,
-        mnemonic: w.mnemonic,
-        derivationPath: d.path,
-        createdAt: Date.now(),
-      })
-    }
+    onAdd(selected.map(d => ({
+      id: crypto.randomUUID(),
+      name: `${w.name} #${d.index}`,
+      type: "mnemonic",
+      address: d.address,
+      privateKey: d.privateKey,
+      mnemonic: w.mnemonic,
+      derivationPath: d.path,
+      createdAt: Date.now(),
+    })))
     onDone()
   }
 
   return (
     <div className="border border-t-0 rounded-b-lg p-3 bg-muted/30 space-y-2" onClick={e => e.stopPropagation()}>
-      <DeriveSelector mnemonic={w.mnemonic!} onSelect={setSelected} />
+      <DeriveSelector mnemonic={w.mnemonic!} onSelect={setSelected} existingAddresses={existingAddresses} />
       <Button size="sm" onClick={handleAdd} disabled={selected.length === 0}>
         {selected.length > 1 ? `Add ${selected.length} Wallets` : "Add to Wallets"}
       </Button>
@@ -460,23 +521,23 @@ function MaskedKeyField({ label, value }: { label: string; value: string }) {
 
 /* ─── Tab: Generate ─────────────────────────────────────────────────── */
 
-function GenerateTab({ onAdd }: { onAdd: (w: StoredWallet) => void }) {
+function GenerateTab({ onAdd }: { onAdd: (ws: StoredWallet[]) => void }) {
   const [mnemonic, setMnemonic] = useState("")
   const [keypairResult, setKeypairResult] = useState<{ address: string; privateKey: string } | null>(null)
   const [selectedDerived, setSelectedDerived] = useState<DerivedAddress[]>([])
   const [name, setName] = useState("")
   const [mode, setMode] = useState<"seed" | "keypair" | null>(null)
   const [wordCount, setWordCount] = useState<12 | 24>(12)
+  const [backedUp, setBackedUp] = useState(false)
 
   function generateSeed() {
-    const entropy = randomBytes(wordCount === 24 ? 32 : 16)
-    const mn = Mnemonic.fromEntropy(entropy)
-    const phrase = mn.phrase
+    const phrase = generateMnemonic(wordCount)
     setMnemonic(phrase)
     setKeypairResult(null)
     setMode("seed")
     setName("")
-    const first = deriveAddresses(phrase, "m/44'/60'/0'/0/", 1)
+    setBackedUp(false)
+    const first = deriveAddresses(phrase, DEFAULT_DERIVATION_BASE, 1)
     setSelectedDerived(first)
   }
 
@@ -490,34 +551,32 @@ function GenerateTab({ onAdd }: { onAdd: (w: StoredWallet) => void }) {
   }
 
   function saveWallets() {
-    if (mode === "seed" && mnemonic && selectedDerived.length > 0) {
-      for (const d of selectedDerived) {
-        onAdd({
-          id: crypto.randomUUID(),
-          name: selectedDerived.length === 1
-            ? (name || `Wallet ${new Date().toLocaleTimeString()}`)
-            : `${name || "Wallet"} #${d.index}`,
-          type: "mnemonic",
-          address: d.address,
-          privateKey: d.privateKey,
-          mnemonic,
-          derivationPath: d.path,
-          createdAt: Date.now(),
-        })
-      }
+    if (mode === "seed" && mnemonic && selectedDerived.length > 0 && backedUp) {
+      onAdd(selectedDerived.map(d => ({
+        id: crypto.randomUUID(),
+        name: selectedDerived.length === 1
+          ? (name || `Wallet ${new Date().toLocaleTimeString()}`)
+          : `${name || "Wallet"} #${d.index}`,
+        type: "mnemonic",
+        address: d.address,
+        privateKey: d.privateKey,
+        mnemonic,
+        derivationPath: d.path,
+        createdAt: Date.now(),
+      })))
       setMnemonic("")
       setSelectedDerived([])
       setMode(null)
       setName("")
     } else if (mode === "keypair" && keypairResult) {
-      onAdd({
+      onAdd([{
         id: crypto.randomUUID(),
         name: name || `Wallet ${new Date().toLocaleTimeString()}`,
         type: "private-key",
         address: keypairResult.address,
         privateKey: keypairResult.privateKey,
         createdAt: Date.now(),
-      })
+      }])
       setKeypairResult(null)
       setMode(null)
       setName("")
@@ -551,10 +610,11 @@ function GenerateTab({ onAdd }: { onAdd: (w: StoredWallet) => void }) {
 
       {mode === "seed" && mnemonic && (
         <div className="space-y-3 border rounded-lg p-4">
-          <div className="space-y-1">
-            <Label className="text-xs">Seed Phrase</Label>
-            <p className="text-xs font-mono bg-muted p-2 rounded break-all select-all">{mnemonic}</p>
-          </div>
+          <SensitiveDisplay label="Seed Phrase" value={mnemonic} />
+          <label className="flex items-center gap-2 text-xs">
+            <input type="checkbox" checked={backedUp} onChange={e => setBackedUp(e.target.checked)} />
+            I have backed up this seed phrase somewhere safe
+          </label>
 
           <DeriveSelector mnemonic={mnemonic} onSelect={setSelectedDerived} />
 
@@ -563,7 +623,7 @@ function GenerateTab({ onAdd }: { onAdd: (w: StoredWallet) => void }) {
               <Label className="text-xs">Wallet Name{selectedDerived.length > 1 ? " (prefix)" : ""}</Label>
               <Input value={name} onChange={e => setName(e.target.value)} placeholder="My Wallet" className="h-8 text-sm" />
             </div>
-            <Button size="sm" onClick={saveWallets} disabled={selectedDerived.length === 0} className="shrink-0">
+            <Button size="sm" onClick={saveWallets} disabled={selectedDerived.length === 0 || !backedUp} className="shrink-0">
               {selectedDerived.length > 1 ? `Save ${selectedDerived.length} Wallets` : "Save to Wallets"}
             </Button>
           </div>
@@ -593,7 +653,7 @@ function GenerateTab({ onAdd }: { onAdd: (w: StoredWallet) => void }) {
 
 /* ─── Tab: Import ───────────────────────────────────────────────────── */
 
-function ImportTab({ onAdd }: { onAdd: (w: StoredWallet) => void }) {
+function ImportTab({ onAdd, existingAddresses }: { onAdd: (ws: StoredWallet[]) => void; existingAddresses: Set<string> }) {
   const [importType, setImportType] = useState<"key" | "seed">("key")
   const [input, setInput] = useState("")
   const [name, setName] = useState("")
@@ -607,10 +667,10 @@ function ImportTab({ onAdd }: { onAdd: (w: StoredWallet) => void }) {
       const trimmed = input.trim()
       HDNodeWallet.fromPhrase(trimmed)
       setValidMnemonic(trimmed)
-      const first = deriveAddresses(trimmed, "m/44'/60'/0'/0/", 1)
+      const first = deriveAddresses(trimmed, DEFAULT_DERIVATION_BASE, 1)
       setSelectedDerived(first)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Invalid seed phrase")
+      setError(errorMessage(err, "Invalid seed phrase"))
     }
   }
 
@@ -619,38 +679,36 @@ function ImportTab({ onAdd }: { onAdd: (w: StoredWallet) => void }) {
     try {
       if (importType === "key") {
         const wallet = new EthersWallet(input.trim())
-        onAdd({
+        onAdd([{
           id: crypto.randomUUID(),
           name: name || `Imported ${new Date().toLocaleTimeString()}`,
           type: "private-key",
           address: wallet.address,
           privateKey: wallet.privateKey,
           createdAt: Date.now(),
-        })
+        }])
         setInput("")
         setName("")
       } else if (validMnemonic && selectedDerived.length > 0) {
-        for (const d of selectedDerived) {
-          onAdd({
-            id: crypto.randomUUID(),
-            name: selectedDerived.length === 1
-              ? (name || `Imported ${new Date().toLocaleTimeString()}`)
-              : `${name || "Imported"} #${d.index}`,
-            type: "mnemonic",
-            address: d.address,
-            privateKey: d.privateKey,
-            mnemonic: validMnemonic,
-            derivationPath: d.path,
-            createdAt: Date.now(),
-          })
-        }
+        onAdd(selectedDerived.map(d => ({
+          id: crypto.randomUUID(),
+          name: selectedDerived.length === 1
+            ? (name || `Imported ${new Date().toLocaleTimeString()}`)
+            : `${name || "Imported"} #${d.index}`,
+          type: "mnemonic",
+          address: d.address,
+          privateKey: d.privateKey,
+          mnemonic: validMnemonic,
+          derivationPath: d.path,
+          createdAt: Date.now(),
+        })))
         setInput("")
         setName("")
         setValidMnemonic("")
         setSelectedDerived([])
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Invalid input")
+      setError(errorMessage(err, "Invalid input"))
     }
   }
 
@@ -688,7 +746,7 @@ function ImportTab({ onAdd }: { onAdd: (w: StoredWallet) => void }) {
         )}
 
         {importType === "seed" && validMnemonic && (
-          <DeriveSelector mnemonic={validMnemonic} onSelect={setSelectedDerived} />
+          <DeriveSelector mnemonic={validMnemonic} onSelect={setSelectedDerived} existingAddresses={existingAddresses} />
         )}
 
         <div className="space-y-1">
@@ -713,11 +771,11 @@ function ImportTab({ onAdd }: { onAdd: (w: StoredWallet) => void }) {
 
 /* ─── Tab: Connect ──────────────────────────────────────────────────── */
 
-function ConnectTab({ onAdd, wallets }: { onAdd: (w: StoredWallet) => void; wallets: StoredWallet[] }) {
+function ConnectTab({ onAdd, wallets }: { onAdd: (ws: StoredWallet[]) => void; wallets: StoredWallet[] }) {
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
 
-  const connectedWallet = wallets.find(w => w.type === "connected" && w.connectorType === "injected")
+  const connectedWallets = wallets.filter(w => w.type === "connected" && w.connectorType === "injected")
 
   async function connectInjected() {
     setError("")
@@ -726,19 +784,24 @@ function ConnectTab({ onAdd, wallets }: { onAdd: (w: StoredWallet) => void; wall
       if (!window.ethereum) {
         throw new Error("No browser wallet detected. Install MetaMask or Core.")
       }
-      const provider = new BrowserProvider(window.ethereum)
-      const signer = await provider.getSigner()
-      const address = await signer.getAddress()
-      onAdd({
-        id: crypto.randomUUID(),
-        name: `Browser Wallet ${truncateId(address, 6, 4)}`,
-        type: "connected",
-        address,
-        connectorType: "injected",
-        createdAt: Date.now(),
-      })
+      // Ask for permissions first so the extension shows its account picker even when already connected.
+      // Wallets without wallet_requestPermissions fall through; a user rejection (4001) aborts.
+      await window.ethereum.request({ method: "wallet_requestPermissions", params: [{ eth_accounts: {} }] })
+        .catch((err: { code?: number }) => { if (err?.code === 4001) throw err })
+      const accounts = await window.ethereum.request({ method: "eth_requestAccounts" }) as string[]
+      onAdd(accounts.map(a => {
+        const address = getAddress(a)
+        return {
+          id: crypto.randomUUID(),
+          name: `Browser Wallet ${truncateId(address, 6, 4)}`,
+          type: "connected" as const,
+          address,
+          connectorType: "injected" as const,
+          createdAt: Date.now(),
+        }
+      }))
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Connection failed")
+      setError(errorMessage(err, "Connection failed"))
     } finally {
       setLoading(false)
     }
@@ -746,21 +809,24 @@ function ConnectTab({ onAdd, wallets }: { onAdd: (w: StoredWallet) => void; wall
 
   return (
     <div className="space-y-4">
-      {connectedWallet ? (
+      {connectedWallets.length > 0 && (
         <div className="rounded-lg border border-green-500/30 bg-green-500/5 p-4 space-y-2">
           <div className="flex items-center gap-2">
             <Check className="h-4 w-4 text-green-400" />
             <span className="text-sm font-display uppercase tracking-wider">Connected</span>
           </div>
-          <p className="text-xs font-mono text-muted-foreground break-all">{connectedWallet.address}</p>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          <Button onClick={connectInjected} disabled={loading} className="w-full justify-start gap-2" variant="outline">
-            {loading ? "Connecting..." : "Connect Browser Wallet (MetaMask / Core)"}
-          </Button>
+          {connectedWallets.map(w => (
+            <p key={w.id} className="text-xs font-mono text-muted-foreground">
+              <CopyableId value={w.address} explorer="address" />
+            </p>
+          ))}
         </div>
       )}
+      <Button onClick={connectInjected} disabled={loading} className="w-full justify-start gap-2" variant="outline">
+        {loading ? "Connecting..." : connectedWallets.length > 0
+          ? "Connect Another Account"
+          : "Connect Browser Wallet (MetaMask / Core)"}
+      </Button>
 
       <p className="text-xs text-muted-foreground">
         Connected wallets use your browser extension to sign. Your private key never leaves the extension.
@@ -780,28 +846,20 @@ function ConnectTab({ onAdd, wallets }: { onAdd: (w: StoredWallet) => void; wall
 const ANVIL_HARDHAT_MNEMONIC = "test test test test test test test test test test test junk"
 
 function DevWalletsTab({ onAdd, existingAddresses }: {
-  onAdd: (w: StoredWallet) => void
-  existingAddresses: string[]
+  onAdd: (ws: StoredWallet[]) => void
+  existingAddresses: Set<string>
 }) {
   const { allNetworks, addCustomNetwork, setNetwork } = useNetwork()
   const [selectedDerived, setSelectedDerived] = useState<DerivedAddress[]>([])
-  const [imported, setImported] = useState(false)
-  const importedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  useEffect(() => {
-    return () => {
-      if (importedTimerRef.current) clearTimeout(importedTimerRef.current)
-    }
-  }, [])
 
   const anvilNetworkExists = allNetworks.some(n =>
     n.baseUrl.includes("127.0.0.1:8545") || n.baseUrl.includes("localhost:8545")
   )
 
-  const alreadyHasMnemonic = existingAddresses.length > 0 && (() => {
+  const alreadyHasMnemonic = existingAddresses.size > 0 && (() => {
     try {
-      const first = deriveAddresses(ANVIL_HARDHAT_MNEMONIC, "m/44'/60'/0'/0/", 1)[0]
-      return existingAddresses.includes(first.address.toLowerCase())
+      const first = deriveAddresses(ANVIL_HARDHAT_MNEMONIC, DEFAULT_DERIVATION_BASE, 1)[0]
+      return existingAddresses.has(first.address.toLowerCase())
     } catch { return false }
   })()
 
@@ -820,21 +878,16 @@ function DevWalletsTab({ onAdd, existingAddresses }: {
 
   function handleImport() {
     if (selectedDerived.length === 0) return
-    for (const d of selectedDerived) {
-      onAdd({
-        id: crypto.randomUUID(),
-        name: `Anvil #${d.index}`,
-        type: "mnemonic",
-        address: d.address,
-        privateKey: d.privateKey,
-        mnemonic: ANVIL_HARDHAT_MNEMONIC,
-        derivationPath: d.path,
-        createdAt: Date.now(),
-      })
-    }
-    setImported(true)
-    if (importedTimerRef.current) clearTimeout(importedTimerRef.current)
-    importedTimerRef.current = setTimeout(() => setImported(false), 2000)
+    onAdd(selectedDerived.map(d => ({
+      id: crypto.randomUUID(),
+      name: `Anvil #${d.index}`,
+      type: "mnemonic",
+      address: d.address,
+      privateKey: d.privateKey,
+      mnemonic: ANVIL_HARDHAT_MNEMONIC,
+      derivationPath: d.path,
+      createdAt: Date.now(),
+    })))
   }
 
   return (
@@ -863,10 +916,10 @@ function DevWalletsTab({ onAdd, existingAddresses }: {
       </div>
 
       {/* Derive selector — same as seed phrase import */}
-      <DeriveSelector mnemonic={ANVIL_HARDHAT_MNEMONIC} onSelect={setSelectedDerived} />
+      <DeriveSelector mnemonic={ANVIL_HARDHAT_MNEMONIC} onSelect={setSelectedDerived} existingAddresses={existingAddresses} />
 
       <Button size="sm" onClick={handleImport} disabled={selectedDerived.length === 0}>
-        {imported ? "Added!" : selectedDerived.length > 1 ? `Add ${selectedDerived.length} Wallets` : "Add to Wallets"}
+        {selectedDerived.length > 1 ? `Add ${selectedDerived.length} Wallets` : "Add to Wallets"}
       </Button>
 
       {alreadyHasMnemonic && (

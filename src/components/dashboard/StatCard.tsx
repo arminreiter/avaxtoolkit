@@ -1,6 +1,7 @@
 import { memo } from "react"
+import Link from "next/link"
 import { Card, CardContent } from "@/components/ui/card"
-import { type LucideIcon } from "lucide-react"
+import { AlertTriangle, type LucideIcon } from "lucide-react"
 import { InfoTooltip } from "@/components/tools/InfoTooltip"
 
 const iconColorMap: Record<string, { text: string; bg: string; border: string }> = {
@@ -20,26 +21,38 @@ interface StatCardProps {
   rpcInfo?: string
   iconColor?: keyof typeof iconColorMap
   delay?: number
+  /** Error message; shows a warning indicator instead of the value. */
+  error?: string
+  /** Internal link to the related section. */
+  href?: string
 }
 
-export const StatCard = memo(function StatCard({ label, value, icon: Icon, loading, rpcInfo, iconColor, delay = 0 }: StatCardProps) {
+export const StatCard = memo(function StatCard({ label, value, icon: Icon, loading, rpcInfo, iconColor, delay = 0, error, href }: StatCardProps) {
   const colors = iconColor ? iconColorMap[iconColor] : null
 
   return (
     <Card
-      className="group animate-fade-in-up"
+      className={`group animate-fade-in-up${href ? " transition-colors hover:border-primary/50" : ""}`}
       style={{ animationDelay: `${delay}ms` }}
     >
       <CardContent className="pt-3 pb-3 relative">
+        {/* Stretched link: a sibling overlay, so the InfoTooltip dialog doesn't bubble into it */}
+        {href && <Link href={href} className="absolute inset-0" aria-label={`Open ${label}`} />}
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
               <span className="text-[10px] font-mono text-muted-foreground/40 select-none">{"//"}</span>
               <p className="text-[11px] text-muted-foreground uppercase tracking-[0.12em] font-mono">{label}</p>
-              {rpcInfo && <InfoTooltip rpcMethod={rpcInfo} />}
+              {rpcInfo && <span className="relative z-10 inline-flex"><InfoTooltip rpcMethod={rpcInfo} /></span>}
             </div>
             {loading ? (
               <div className="h-6 w-20 shimmer mt-1.5" />
+            ) : error ? (
+              <p className="relative z-10 flex items-center gap-1.5 text-lg font-bold mt-1 leading-tight font-display tracking-tight text-destructive" title={`Failed to load: ${error}`}>
+                <AlertTriangle className="h-4 w-4" aria-hidden="true" />
+                <span>{"\u2014"}</span>
+                <span className="sr-only">Failed to load: {error}</span>
+              </p>
             ) : (
               <p className="text-lg font-bold mt-1 leading-tight font-display tracking-tight">{value}</p>
             )}

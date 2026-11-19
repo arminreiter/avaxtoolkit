@@ -23,7 +23,7 @@ interface DataTableProps<T> {
 type SortDir = "asc" | "desc"
 
 function SortIcon({ colKey, sortKey, sortDir }: { colKey: string; sortKey: string | null; sortDir: SortDir }) {
-  if (sortKey !== colKey) return <ArrowUpDown className="h-3 w-3 opacity-0 group-hover:opacity-50 transition-opacity" />
+  if (sortKey !== colKey) return <ArrowUpDown className="h-3 w-3 opacity-0 group-hover:opacity-50 group-focus-visible:opacity-50 transition-opacity" />
   if (sortDir === "asc") return <ArrowUp className="h-3 w-3" />
   return <ArrowDown className="h-3 w-3" />
 }
@@ -51,6 +51,13 @@ export function DataTable<T extends Record<string, unknown>>({
   const [sortDir, setSortDir] = useState<SortDir>("asc")
   const [search, setSearch] = useState("")
   const [page, setPage] = useState(0)
+
+  // Back to the first page when new data arrives (setState-during-render, as in NavItem)
+  const [prevData, setPrevData] = useState(data)
+  if (prevData !== data) {
+    setPrevData(data)
+    setPage(0)
+  }
 
   const filtered = useMemo(() => {
     const trimmed = search.trim()
@@ -127,13 +134,17 @@ export function DataTable<T extends Record<string, unknown>>({
                   {columns.map(col => (
                     <th
                       key={col.key}
-                      className="text-left py-3 px-4 font-medium text-muted-foreground cursor-pointer select-none group hover:text-foreground transition-colors"
-                      onClick={() => handleSort(col.key)}
+                      aria-sort={sortKey === col.key ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
+                      className="text-left py-3 px-4 font-medium text-muted-foreground"
                     >
-                      <span className="inline-flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => handleSort(col.key)}
+                        className="inline-flex items-center gap-1 cursor-pointer select-none group hover:text-foreground focus-visible:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors"
+                      >
                         {col.label}
                         <SortIcon colKey={col.key} sortKey={sortKey} sortDir={sortDir} />
-                      </span>
+                      </button>
                     </th>
                   ))}
                 </tr>
@@ -158,6 +169,8 @@ export function DataTable<T extends Record<string, unknown>>({
               </span>
               <div className="flex items-center gap-1">
                 <button
+                  type="button"
+                  aria-label="Previous page"
                   onClick={() => setPage(p => Math.max(0, p - 1))}
                   disabled={currentPage === 0}
                   className="p-1 rounded hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
@@ -168,6 +181,8 @@ export function DataTable<T extends Record<string, unknown>>({
                   {currentPage + 1} / {totalPages}
                 </span>
                 <button
+                  type="button"
+                  aria-label="Next page"
                   onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
                   disabled={currentPage >= totalPages - 1}
                   className="p-1 rounded hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"

@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Activity } from "lucide-react"
 import { InfoTooltip } from "@/components/tools/InfoTooltip"
 
-export function NetworkHealth() {
+export function NetworkHealth({ refreshKey = 0 }: { refreshKey?: number }) {
   const { network } = useNetwork()
   const [healthy, setHealthy] = useState<boolean | null>(null)
   const [peerCount, setPeerCount] = useState<string | null>(null)
@@ -22,13 +22,13 @@ export function NetworkHealth() {
         AvalancheService.getPeers(network.baseUrl),
       ])
       if (cancelled) return
-      if (healthResult.status === "fulfilled") setHealthy(healthResult.value.healthy)
-      if (peersResult.status === "fulfilled") setPeerCount(peersResult.value.numPeers)
+      setHealthy(healthResult.status === "fulfilled" ? healthResult.value.healthy : null)
+      setPeerCount(peersResult.status === "fulfilled" ? peersResult.value.numPeers : null)
       setLoading(false)
     }
     fetch()
     return () => { cancelled = true }
-  }, [network.baseUrl])
+  }, [network.baseUrl, refreshKey])
 
   return (
     <Card className="animate-fade-in-up" style={{ animationDelay: "500ms" }}>
